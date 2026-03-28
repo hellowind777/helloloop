@@ -40,3 +40,34 @@ test("安装脚本只安装插件 bundle 文件，不复制 .git 元数据", () 
     fs.rmSync(tempHome, { recursive: true, force: true });
   }
 });
+
+test("安装脚本覆盖已有安装时会清掉残留的 .git 元数据", () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "autoloop-home-reinstall-"));
+  const scriptFile = path.join(repoRoot, "scripts", "install-home-plugin.ps1");
+  const pluginRoot = path.join(tempHome, "plugins", "autoloop");
+  const staleGitRoot = path.join(pluginRoot, ".git");
+
+  fs.mkdirSync(staleGitRoot, { recursive: true });
+  fs.writeFileSync(path.join(staleGitRoot, "config"), "[core]\nrepositoryformatversion = 0\n", "utf8");
+
+  const result = spawnSync("pwsh", [
+    "-NoLogo",
+    "-NoProfile",
+    "-File",
+    scriptFile,
+    "-CodexHome",
+    tempHome,
+    "-Force",
+  ], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+  try {
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(fs.existsSync(path.join(pluginRoot, ".codex-plugin", "plugin.json")));
+    assert.ok(!fs.existsSync(staleGitRoot));
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});

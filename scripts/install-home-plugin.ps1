@@ -51,6 +51,11 @@ foreach ($entry in $bundleEntries) {
   Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $targetPluginRoot $entry) -Recurse -Force
 }
 
+$gitMetadataPath = Join-Path $targetPluginRoot ".git"
+if (Test-Path $gitMetadataPath) {
+  Remove-Item -LiteralPath $gitMetadataPath -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 $marketplaceFile = Join-Path $resolvedCodexHome ".agents\plugins\marketplace.json"
 $marketplaceDir = Split-Path -Parent $marketplaceFile
 New-Item -ItemType Directory -Path $marketplaceDir -Force | Out-Null
