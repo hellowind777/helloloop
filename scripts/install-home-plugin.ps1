@@ -15,6 +15,19 @@ $resolvedCodexHome = [System.IO.Path]::GetFullPath($CodexHome)
 $targetPluginsRoot = Join-Path $resolvedCodexHome "plugins"
 $targetPluginRoot = Join-Path $targetPluginsRoot "autoloop"
 $resolvedTargetPluginRoot = [System.IO.Path]::GetFullPath($targetPluginRoot)
+$bundleEntries = @(
+  ".codex-plugin",
+  ".gitignore",
+  "README.md",
+  "bin",
+  "docs",
+  "package.json",
+  "scripts",
+  "skills",
+  "src",
+  "templates",
+  "tests"
+)
 
 if (-not $resolvedTargetPluginRoot.StartsWith($resolvedCodexHome, [System.StringComparison]::OrdinalIgnoreCase)) {
   throw "目标插件目录超出 Codex Home：$resolvedTargetPluginRoot"
@@ -28,7 +41,15 @@ if (Test-Path $targetPluginRoot) {
 }
 
 New-Item -ItemType Directory -Path $targetPluginsRoot -Force | Out-Null
-Copy-Item -LiteralPath $sourceRoot -Destination $targetPluginRoot -Recurse -Force
+New-Item -ItemType Directory -Path $targetPluginRoot -Force | Out-Null
+
+foreach ($entry in $bundleEntries) {
+  $sourcePath = Join-Path $sourceRoot $entry
+  if (-not (Test-Path $sourcePath)) {
+    continue
+  }
+  Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $targetPluginRoot $entry) -Recurse -Force
+}
 
 $marketplaceFile = Join-Path $resolvedCodexHome ".agents\plugins\marketplace.json"
 $marketplaceDir = Split-Path -Parent $marketplaceFile
