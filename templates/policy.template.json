@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "updatedAt": "2026-03-27T00:00:00.000Z",
+  "maxLoopTasks": 4,
+  "maxTaskAttempts": 2,
+  "maxTaskStrategies": 4,
+  "stopOnFailure": false,
+  "stopOnHighRisk": true,
+  "codex": {
+    "model": "",
+    "executable": "",
+    "sandbox": "workspace-write",
+    "dangerouslyBypassSandbox": false,
+    "jsonOutput": true
+  }
+}

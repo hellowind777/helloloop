@@ -1,0 +1,14 @@
+{
+  "requiredDocs": [],
+  "constraints": [],
+  "planner": {
+    "minTasks": 3,
+    "maxTasks": 8,
+    "roleInference": true,
+    "workflowHints": [
+      "先识别每份文档在开发流程中的角色，再组织主线任务。",
+      "优先输出可逐步开发、测试、验收的任务。",
+      "避免把整个文档目录压成一个大任务。"
+    ]
+  }
+}

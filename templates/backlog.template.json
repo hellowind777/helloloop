@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "project": "replace-with-your-project",
+  "updatedAt": "2026-03-27T00:00:00.000Z",
+  "tasks": [
+    {
+      "id": "example-task-1",
+      "title": "示例任务：完成某个低风险功能",
+      "status": "pending",
+      "priority": "P1",
+      "risk": "low",
+      "goal": "按开发文档完成一个可验证的小工作包。",
+      "docs": [
+        "docs/architecture/00-架构索引.md"
+      ],
+      "paths": [
+        "src/"
+      ],
+      "acceptance": [
+        "功能完成",
+        "验证通过",
+        "文档同步"
+      ]
+    }
+  ]
+}

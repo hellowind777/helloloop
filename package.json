@@ -1,0 +1,16 @@
+{
+  "name": "autoloop",
+  "version": "0.1.0",
+  "description": "Standalone Codex plugin bundle for backlog-driven repository execution with Ralph Loop guards",
+  "type": "module",
+  "bin": {
+    "autoloop": "./bin/autoloop.mjs"
+  },
+  "scripts": {
+    "test": "node --test tests/cli_surface.test.mjs tests/ralph_loop.test.mjs tests/plugin_bundle.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
+

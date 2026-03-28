@@ -1,0 +1,33 @@
+{
+  "name": "autoloop",
+  "version": "0.1.0",
+  "description": "Backlog-driven continuous repository execution for Codex with verification loops and explicit skill and CLI entrypoints.",
+  "author": {
+    "name": "HelloWind",
+    "url": "https://github.com/hellowind777"
+  },
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "autoloop",
+    "automation",
+    "backlog",
+    "verification"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Autoloop",
+    "shortDescription": "Continuous repo execution with backlog and Ralph Loop guards",
+    "longDescription": "Autoloop packages backlog-driven continuous development for Codex as a pure official plugin bundle. Because current Codex runtime does not load Hook manifests from plugins, this plugin intentionally drops `~autoloop` Hook mode and uses explicit skill and CLI entrypoints instead.",
+    "developerName": "HelloWind",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Use Autoloop to inspect backlog state and keep this repo moving with explicit run-loop commands."
+    ],
+    "brandColor": "#0F766E"
+  }
+}

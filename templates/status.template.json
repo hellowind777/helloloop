@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "stage": "idle",
+  "taskId": null,
+  "taskTitle": "",
+  "runDir": "",
+  "summary": {
+    "total": 1,
+    "pending": 1,
+    "inProgress": 0,
+    "done": 0,
+    "failed": 0,
+    "blocked": 0
+  },
+  "message": "Autoloop 已初始化。",
+  "updatedAt": "2026-03-27T00:00:00.000Z"
+}
+
