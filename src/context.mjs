@@ -9,7 +9,7 @@ const toolRoot = path.resolve(__dirname, "..");
 
 export function createContext(options = {}) {
   const repoRoot = path.resolve(options.repoRoot || process.cwd());
-  const configDirName = options.configDirName || ".helloagents/autoloop";
+  const configDirName = options.configDirName || ".helloagents/helloloop";
   const configRoot = resolveFrom(repoRoot, ...configDirName.split("/"));
 
   return {
@@ -18,7 +18,7 @@ export function createContext(options = {}) {
     bundleRoot: toolRoot,
     templatesDir: resolveFrom(toolRoot, "templates"),
     pluginManifestFile: resolveFrom(toolRoot, ".codex-plugin", "plugin.json"),
-    skillFile: resolveFrom(toolRoot, "skills", "autoloop", "SKILL.md"),
+    skillFile: resolveFrom(toolRoot, "skills", "helloloop", "SKILL.md"),
     installScriptFile: resolveFrom(toolRoot, "scripts", "install-home-plugin.ps1"),
     docsRoot: resolveFrom(toolRoot, "docs"),
     configDirName,

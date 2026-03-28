@@ -75,7 +75,7 @@ export function loadProjectConfig(context) {
 export function loadBacklog(context) {
   const backlog = readJson(context.backlogFile);
   if (!backlog || !Array.isArray(backlog.tasks)) {
-    throw new Error("Autoloop backlog 无效：缺少 tasks 数组。");
+    throw new Error("HelloLoop backlog 无效：缺少 tasks 数组。");
   }
   return backlog;
 }

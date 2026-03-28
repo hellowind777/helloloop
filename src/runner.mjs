@@ -324,7 +324,7 @@ export function renderStatusText(context, options = {}) {
   const nextTask = selectNextTask(backlog, options);
 
   return [
-    "Autoloop 状态",
+    "HelloLoop 状态",
     "============",
     `仓库：${context.repoRoot}`,
     `总任务：${summary.total}`,

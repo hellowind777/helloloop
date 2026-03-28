@@ -10,8 +10,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 
-test("安装脚本只安装插件 bundle 文件，不复制 .git 元数据", () => {
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "autoloop-home-install-"));
+test("安装脚本只安装运行时 bundle，不复制开发文档、测试和 .git 元数据", () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-home-install-"));
   const scriptFile = path.join(repoRoot, "scripts", "install-home-plugin.ps1");
 
   const result = spawnSync("pwsh", [
@@ -28,13 +28,14 @@ test("安装脚本只安装插件 bundle 文件，不复制 .git 元数据", () 
 
   try {
     assert.equal(result.status, 0, result.stderr);
-    const pluginRoot = path.join(tempHome, "plugins", "autoloop");
+    const pluginRoot = path.join(tempHome, "plugins", "helloloop");
     const marketplaceFile = path.join(tempHome, ".agents", "plugins", "marketplace.json");
 
     assert.ok(fs.existsSync(path.join(pluginRoot, ".codex-plugin", "plugin.json")));
-    assert.ok(fs.existsSync(path.join(pluginRoot, "scripts", "autoloop.mjs")));
-    assert.ok(fs.existsSync(path.join(pluginRoot, "docs", "README.md")));
+    assert.ok(fs.existsSync(path.join(pluginRoot, "scripts", "helloloop.mjs")));
     assert.ok(fs.existsSync(marketplaceFile));
+    assert.ok(!fs.existsSync(path.join(pluginRoot, "docs")));
+    assert.ok(!fs.existsSync(path.join(pluginRoot, "tests")));
     assert.ok(!fs.existsSync(path.join(pluginRoot, ".git")));
   } finally {
     fs.rmSync(tempHome, { recursive: true, force: true });
@@ -42,9 +43,9 @@ test("安装脚本只安装插件 bundle 文件，不复制 .git 元数据", () 
 });
 
 test("安装脚本覆盖已有安装时会清掉残留的 .git 元数据", () => {
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "autoloop-home-reinstall-"));
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-home-reinstall-"));
   const scriptFile = path.join(repoRoot, "scripts", "install-home-plugin.ps1");
-  const pluginRoot = path.join(tempHome, "plugins", "autoloop");
+  const pluginRoot = path.join(tempHome, "plugins", "helloloop");
   const staleGitRoot = path.join(pluginRoot, ".git");
 
   fs.mkdirSync(staleGitRoot, { recursive: true });

@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { createContext } from "./context.mjs";
 import { fileExists } from "./common.mjs";
 import { scaffoldIfMissing } from "./config.mjs";
+import { installPluginBundle } from "./install.mjs";
 import { runLoop, runOnce, renderStatusText } from "./runner.mjs";
 
 function parseArgs(argv) {
@@ -23,6 +24,7 @@ function parseArgs(argv) {
     else if (arg === "--max-attempts") { options.maxAttempts = Number(rest[index + 1]); index += 1; }
     else if (arg === "--max-strategies") { options.maxStrategies = Number(rest[index + 1]); index += 1; }
     else if (arg === "--repo") { options.repoRoot = rest[index + 1]; index += 1; }
+    else if (arg === "--codex-home") { options.codexHome = rest[index + 1]; index += 1; }
     else if (arg === "--config-dir") { options.configDirName = rest[index + 1]; index += 1; }
     else if (arg === "--required-doc") { options.requiredDocs.push(rest[index + 1]); index += 1; }
     else if (arg === "--constraint") { options.constraints.push(rest[index + 1]); index += 1; }
@@ -36,19 +38,21 @@ function parseArgs(argv) {
 
 function helpText() {
   return [
-    "用法：autoloop <command> [options]",
+    "用法：helloloop <command> [options]",
     "",
     "命令：",
-    "  init                  初始化 .helloagents/autoloop 配置",
+    "  install               安装插件到 Codex Home（适合 npx / npm bin 分发）",
+    "  init                  初始化 .helloagents/helloloop 配置",
     "  status                查看 backlog 与下一任务",
     "  next                  生成下一任务干跑预览",
     "  run-once              执行一个任务",
     "  run-loop              连续执行多个任务",
-    "  doctor                检查 Codex、当前插件 bundle 与目标仓库 .helloagents/autoloop 配置是否可用",
+    "  doctor                检查 Codex、当前插件 bundle 与目标仓库 .helloagents/helloloop 配置是否可用",
     "",
     "选项：",
+    "  --codex-home <dir>    Codex Home，install 默认使用 ~/.codex",
     "  --repo <dir>          目标仓库根目录，默认当前目录",
-    "  --config-dir <dir>    配置目录，默认 .helloagents/autoloop",
+    "  --config-dir <dir>    配置目录，默认 .helloagents/helloloop",
     "  --dry-run             只生成提示与预览，不真正调用 codex",
     "  --task-id <id>        指定任务 id",
     "  --max-tasks <n>       run-loop 最多执行 n 个任务",
@@ -137,7 +141,7 @@ async function runDoctor(context) {
   }
 
   if (checks.every((item) => item.ok)) {
-    console.log("\nDoctor 结论：当前 Autoloop bundle 与目标仓库已具备基本运行条件。");
+    console.log("\nDoctor 结论：当前 HelloLoop bundle 与目标仓库已具备基本运行条件。");
   }
 
   if (checks.some((item) => !item.ok)) {
@@ -158,10 +162,24 @@ export async function runCli(argv) {
     configDirName: options.configDirName,
   });
 
+  if (command === "install") {
+    const result = installPluginBundle({
+      bundleRoot: context.bundleRoot,
+      codexHome: options.codexHome,
+      force: options.force,
+    });
+    console.log(`HelloLoop 已安装到：${result.targetPluginRoot}`);
+    console.log(`Marketplace 已更新：${result.marketplaceFile}`);
+    console.log("");
+    console.log("下一步示例：");
+    console.log(`node ${path.join(result.targetPluginRoot, "scripts", "helloloop.mjs")} doctor --repo D:\\GitHub\\dev\\your-repo`);
+    return;
+  }
+
   if (command === "init") {
     const created = scaffoldIfMissing(context);
     if (!created.length) {
-      console.log("Autoloop 配置已存在，无需初始化。");
+      console.log("HelloLoop 配置已存在，无需初始化。");
       return;
     }
     console.log([

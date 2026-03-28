@@ -14,7 +14,7 @@ function writeText(filePath, content) {
 }
 
 test("纯插件模式仍保留 Ralph Loop 默认参数与干跑提示", async () => {
-  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "autoloop-ralph-loop-"));
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-ralph-loop-"));
   const context = createContext({ repoRoot });
 
   writeText(path.join(repoRoot, ".helloagents", "verify.yaml"), "commands:\n  - node --version\n");

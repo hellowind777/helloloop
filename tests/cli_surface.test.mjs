@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
-const pluginEntry = path.join(repoRoot, "scripts", "autoloop.mjs");
+const pluginEntry = path.join(repoRoot, "scripts", "helloloop.mjs");
+const npmBinEntry = path.join(repoRoot, "bin", "helloloop.mjs");
 
 function writeText(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -38,33 +39,54 @@ test("官方插件入口 help 不再暴露 install-hooks 或 Hook 模式", () =>
   });
 
   assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /install/);
   assert.match(result.stdout, /run-loop/);
   assert.match(result.stdout, /doctor/);
   assert.doesNotMatch(result.stdout, /install-hooks/);
   assert.doesNotMatch(result.stdout, /Hook 模式/);
-  assert.doesNotMatch(result.stdout, /\.autoloop/);
+  assert.doesNotMatch(result.stdout, /\.helloloop/);
 });
 
-test("doctor 只检查纯插件模式前提，不再要求 hooks.json 或 .autoloop\/project.json", () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "autoloop-cli-surface-"));
+test("npm bin 入口支持 install 命令，把插件安装到指定 Codex Home", () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-cli-install-"));
+
+  const result = spawnSync("node", [npmBinEntry, "install", "--codex-home", tempHome], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+  try {
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /HelloLoop 已安装到/);
+    assert.ok(fs.existsSync(path.join(tempHome, "plugins", "helloloop", ".codex-plugin", "plugin.json")));
+    assert.ok(fs.existsSync(path.join(tempHome, ".agents", "plugins", "marketplace.json")));
+    assert.ok(!fs.existsSync(path.join(tempHome, "plugins", "helloloop", "docs")));
+    assert.ok(!fs.existsSync(path.join(tempHome, "plugins", "helloloop", "tests")));
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("doctor 只检查纯插件模式前提，不再要求 hooks.json 或 .helloloop\\/project.json", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-cli-surface-"));
   const fakeBin = path.join(tempRoot, "bin");
   const tempRepo = path.join(tempRoot, "repo");
 
   createFakeCodex(fakeBin);
-  writeJson(path.join(tempRepo, ".helloagents", "autoloop", "backlog.json"), {
+  writeJson(path.join(tempRepo, ".helloagents", "helloloop", "backlog.json"), {
     version: 1,
     project: "test-project",
     updatedAt: "2026-03-28T00:00:00.000Z",
     tasks: [],
   });
-  writeJson(path.join(tempRepo, ".helloagents", "autoloop", "policy.json"), {
+  writeJson(path.join(tempRepo, ".helloagents", "helloloop", "policy.json"), {
     version: 1,
     maxLoopTasks: 4,
     maxTaskAttempts: 2,
     maxTaskStrategies: 4,
     stopOnFailure: false,
   });
-  writeJson(path.join(tempRepo, ".helloagents", "autoloop", "project.json"), {
+  writeJson(path.join(tempRepo, ".helloagents", "helloloop", "project.json"), {
     requiredDocs: [],
     constraints: [],
   });
@@ -87,5 +109,5 @@ test("doctor 只检查纯插件模式前提，不再要求 hooks.json 或 .autol
   assert.match(result.stdout, /OK  plugin manifest/);
   assert.match(result.stdout, /OK  plugin skill/);
   assert.doesNotMatch(result.stdout, /hooks\.json/);
-  assert.doesNotMatch(result.stdout, /\.autoloop[\\\/]project\.json/);
+  assert.doesNotMatch(result.stdout, /\.helloloop[\\\/]project\.json/);
 });

@@ -1,11 +1,21 @@
 {
-  "name": "autoloop",
+  "name": "helloloop",
   "version": "0.1.0",
   "description": "Standalone Codex plugin bundle for backlog-driven repository execution with Ralph Loop guards",
   "type": "module",
   "bin": {
-    "autoloop": "./bin/autoloop.mjs"
+    "helloloop": "./bin/helloloop.mjs"
   },
+  "files": [
+    ".codex-plugin",
+    "README.md",
+    "bin",
+    "package.json",
+    "scripts",
+    "skills",
+    "src",
+    "templates"
+  ],
   "scripts": {
     "test": "node --test tests/cli_surface.test.mjs tests/install_script.test.mjs tests/ralph_loop.test.mjs tests/plugin_bundle.test.mjs"
   },

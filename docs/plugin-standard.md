@@ -1,6 +1,6 @@
-# Autoloop 插件标准映射
+# HelloLoop 插件标准映射
 
-本文只回答一个问题：按 `openai/codex` 与 `openai/plugins` 的官方最新源码，独立目录版 `Autoloop` 应该如何组织为官方标准插件。
+本文只回答一个问题：按 `openai/codex` 与 `openai/plugins` 的官方最新源码，独立目录版 `HelloLoop` 应该如何组织为官方标准插件。
 
 ## 上游快照
 
@@ -86,17 +86,17 @@ Hook 当前仍然不走插件 manifest。
 
 因此，不能把“官方仓库允许打包 hooks 文件”误读成“当前运行时支持纯插件 Hook 接入”。
 
-## Autoloop 的正确映射
+## HelloLoop 的正确映射
 
-按官方源码约束，`Autoloop` 如果坚持“纯官方插件、不要外挂其他文件”，那正确映射就是让当前目录本身成为插件根目录，并显式放弃 Hook 自动驾驶层。
+按官方源码约束，`HelloLoop` 如果坚持“纯官方插件、不要外挂其他文件”，那正确映射就是让当前目录本身成为插件根目录，并显式放弃 Hook 自动驾驶层。
 
 ### 1. 官方插件层
 
 用于满足官方插件标准：
 
 - `.codex-plugin/plugin.json`
-- `skills/autoloop/SKILL.md`
-- `scripts/autoloop.mjs`
+- `skills/helloloop/SKILL.md`
+- `scripts/helloloop.mjs`
 - 外部 `<codex-home>/.agents/plugins/marketplace.json`
 
 这一层负责：
@@ -111,19 +111,19 @@ Hook 当前仍然不走插件 manifest。
 
 以下能力在当前实现中仍然保留：
 
-- `autoloop:autoloop` skill 入口
-- `scripts/autoloop.mjs` CLI 入口
-- `.helloagents/autoloop/` 下的 backlog / policy / project / status 状态目录
+- `helloloop:helloloop` skill 入口
+- `scripts/helloloop.mjs` CLI 入口
+- `.helloagents/helloloop/` 下的 backlog / policy / project / status 状态目录
 - Ralph Loop 的多轮重试与换路策略
 
 ## 纯官方插件模式下主动放弃的能力
 
 因为官方运行时今天不会从插件 manifest 自动加载 Hook，所以纯插件化必须明确放弃这些能力：
 
-- `~autoloop`
-- `~autoloop confirm`
-- `~autoloop status`
-- `~autoloop stop --yes`
+- `~helloloop`
+- `~helloloop confirm`
+- `~helloloop status`
+- `~helloloop stop --yes`
 - `UserPromptSubmit` 进入会话
 - `Stop` Hook 自动续跑
 
@@ -133,11 +133,11 @@ Hook 当前仍然不走插件 manifest。
 
 当前 bundle 采用以下原则：
 
-1. 当前目录自身对齐官方插件目录标准，不再包一层 `plugins/autoloop/`。
+1. 当前目录自身对齐官方插件目录标准，不再包一层 `plugins/helloloop/`。
 2. 不在 `plugin.json` 里声明当前运行时不支持的 `hooks` 字段。
-3. 不再通过 bridge 或额外挂载文件偷偷恢复 `~autoloop`。
+3. 不再通过 bridge 或额外挂载文件偷偷恢复 `~helloloop`。
 4. 插件使用显式 skill/CLI 入口，而不是伪装成官方支持的 Hook 插件。
 5. 开发文档独立放在当前目录的 `docs/` 下。
-6. 安装时由外部 marketplace 指向 `./plugins/autoloop`，而不是把 marketplace 塞进插件目录本身。
+6. 安装时由外部 marketplace 指向 `./plugins/helloloop`，而不是把 marketplace 塞进插件目录本身。
 
 这不是降级，而是当前官方源码边界下唯一严格符合“纯官方插件”要求的实现。
