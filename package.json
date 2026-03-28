@@ -3,6 +3,17 @@
   "version": "0.1.0",
   "description": "Standalone Codex plugin bundle for backlog-driven repository execution with Ralph Loop guards",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hellowind777/helloloop.git"
+  },
+  "homepage": "https://github.com/hellowind777/helloloop#readme",
+  "bugs": {
+    "url": "https://github.com/hellowind777/helloloop/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "helloloop": "./bin/helloloop.mjs"
   },
