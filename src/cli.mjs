@@ -7,6 +7,8 @@ import { scaffoldIfMissing } from "./config.mjs";
 import { installPluginBundle } from "./install.mjs";
 import { runLoop, runOnce, renderStatusText } from "./runner.mjs";
 
+const REPO_ROOT_PLACEHOLDER = "<REPO_ROOT>";
+
 function parseArgs(argv) {
   const [command = "status", ...rest] = argv;
   const options = {
@@ -66,6 +68,14 @@ function helpText() {
 
 function printHelp() {
   console.log(helpText());
+}
+
+function renderFollowupExamples() {
+  return [
+    "下一步示例：",
+    `npx helloloop doctor --repo ${REPO_ROOT_PLACEHOLDER}`,
+    `如已全局安装，也可直接运行：helloloop doctor --repo ${REPO_ROOT_PLACEHOLDER}`,
+  ].join("\n");
 }
 
 function probeCodexVersion() {
@@ -171,8 +181,7 @@ export async function runCli(argv) {
     console.log(`HelloLoop 已安装到：${result.targetPluginRoot}`);
     console.log(`Marketplace 已更新：${result.marketplaceFile}`);
     console.log("");
-    console.log("下一步示例：");
-    console.log(`node ${path.join(result.targetPluginRoot, "scripts", "helloloop.mjs")} doctor --repo D:\\GitHub\\dev\\your-repo`);
+    console.log(renderFollowupExamples());
     return;
   }
 

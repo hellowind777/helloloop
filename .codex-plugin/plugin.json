@@ -1,10 +1,9 @@
 {
   "name": "helloloop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Backlog-driven continuous repository execution for Codex with verification loops and explicit skill and CLI entrypoints.",
   "author": {
-    "name": "HelloWind",
-    "url": "https://github.com/hellowind777"
+    "name": "HelloLoop"
   },
   "license": "MIT",
   "keywords": [
@@ -18,8 +17,8 @@
   "interface": {
     "displayName": "HelloLoop",
     "shortDescription": "Continuous repo execution with backlog and Ralph Loop guards",
-    "longDescription": "HelloLoop packages backlog-driven continuous development for Codex as a pure official plugin bundle. Because current Codex runtime does not load Hook manifests from plugins, this plugin intentionally drops `~helloloop` Hook mode and uses explicit skill and CLI entrypoints instead.",
-    "developerName": "HelloWind",
+    "longDescription": "HelloLoop packages backlog-driven continuous development for Codex as an official plugin bundle with explicit skill and CLI entrypoints.",
+    "developerName": "HelloLoop",
     "category": "Coding",
     "capabilities": [
       "Interactive",

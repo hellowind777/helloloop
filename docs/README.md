@@ -12,7 +12,7 @@
 - `tests/`
 - `docs/`
 
-这样做的原因不是偏好，而是官方运行时边界决定的。当前 Codex 官方插件运行时会自动加载插件里的 `skills`、`mcpServers`、`apps`，但不会从 `plugin.json` 自动接入 Hook。因此，这个独立 bundle 明确不再支持 `~helloloop` Hook 模式。
+这样做的原因不是偏好，而是官方运行时边界决定的。当前 Codex 官方插件运行时会自动加载插件里的 `skills`、`mcpServers`、`apps`，因此 `HelloLoop` 采用插件技能与显式 CLI 双入口交付。
 
 ## 目录
 
@@ -48,20 +48,12 @@ helloloop/
 - 显式 CLI / skill 触发
 - Ralph Loop 式失败重试与换路
 
-当前纯插件版本主动不支持：
-
-- `~helloloop`
-- `~helloloop confirm`
-- `~helloloop status`
-- `~helloloop stop --yes`
-- `UserPromptSubmit` / `Stop` Hook 自动续跑
-
 官方插件入口脚本：
 
 ```powershell
-node .\scripts\helloloop.mjs doctor --repo D:\GitHub\dev\your-repo
-node .\scripts\helloloop.mjs init --repo D:\GitHub\dev\your-repo
-node .\scripts\helloloop.mjs run-loop --repo D:\GitHub\dev\your-repo
+node .\scripts\helloloop.mjs doctor --repo <REPO_ROOT>
+node .\scripts\helloloop.mjs init --repo <REPO_ROOT>
+node .\scripts\helloloop.mjs run-loop --repo <REPO_ROOT>
 ```
 
 ## 状态目录
@@ -99,20 +91,22 @@ helloloop:helloloop
 命令：
 
 ```powershell
-pwsh -NoLogo -NoProfile -File .\scripts\install-home-plugin.ps1 -CodexHome C:\Users\hellowind\.codex
-node C:\Users\hellowind\.codex\plugins\helloloop\scripts\helloloop.mjs init --repo D:\GitHub\dev\your-repo
-node C:\Users\hellowind\.codex\plugins\helloloop\scripts\helloloop.mjs status --repo D:\GitHub\dev\your-repo
-node C:\Users\hellowind\.codex\plugins\helloloop\scripts\helloloop.mjs run-loop --repo D:\GitHub\dev\your-repo --max-tasks 2
+npx helloloop install --codex-home <CODEX_HOME>
+npx helloloop init --repo <REPO_ROOT>
+npx helloloop status --repo <REPO_ROOT>
+npx helloloop run-loop --repo <REPO_ROOT> --max-tasks 2
 ```
+
+如果已经全局安装 `helloloop`，则可以把 `npx helloloop` 简写为 `helloloop`。
 
 ## 核心命令
 
 ```powershell
-node C:\Users\hellowind\.codex\plugins\helloloop\scripts\helloloop.mjs doctor --repo D:\GitHub\dev\your-repo
-node C:\Users\hellowind\.codex\plugins\helloloop\scripts\helloloop.mjs status --repo D:\GitHub\dev\your-repo
-node C:\Users\hellowind\.codex\plugins\helloloop\scripts\helloloop.mjs next --repo D:\GitHub\dev\your-repo
-node C:\Users\hellowind\.codex\plugins\helloloop\scripts\helloloop.mjs run-once --repo D:\GitHub\dev\your-repo
-node C:\Users\hellowind\.codex\plugins\helloloop\scripts\helloloop.mjs run-loop --repo D:\GitHub\dev\your-repo
+npx helloloop doctor --repo <REPO_ROOT>
+npx helloloop status --repo <REPO_ROOT>
+npx helloloop next --repo <REPO_ROOT>
+npx helloloop run-once --repo <REPO_ROOT>
+npx helloloop run-loop --repo <REPO_ROOT>
 ```
 
 ## 验证

@@ -10,7 +10,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 
-test("安装脚本只安装运行时 bundle，不复制开发文档、测试和 .git 元数据", () => {
+test("Windows 安装脚本只安装运行时 bundle，不复制开发文档、测试和 .git 元数据", {
+  skip: process.platform !== "win32",
+}, () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-home-install-"));
   const scriptFile = path.join(repoRoot, "scripts", "install-home-plugin.ps1");
 
@@ -42,7 +44,9 @@ test("安装脚本只安装运行时 bundle，不复制开发文档、测试和 
   }
 });
 
-test("安装脚本覆盖已有安装时会清掉残留的 .git 元数据", () => {
+test("Windows 安装脚本覆盖已有安装时会清掉残留的 .git 元数据", {
+  skip: process.platform !== "win32",
+}, () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-home-reinstall-"));
   const scriptFile = path.join(repoRoot, "scripts", "install-home-plugin.ps1");
   const pluginRoot = path.join(tempHome, "plugins", "helloloop");

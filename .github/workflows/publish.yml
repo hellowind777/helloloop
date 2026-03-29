@@ -92,8 +92,9 @@ jobs:
         run: |
           REPO_URL=$(node -p "const pkg=require('./package.json'); const repo=pkg.repository; typeof repo === 'string' ? repo : (repo && repo.url) || ''")
           EXPECTED_URL="https://github.com/${{ github.repository }}.git"
-          if [ "$REPO_URL" != "$EXPECTED_URL" ]; then
-            echo "::error::package.json repository.url ($REPO_URL) must equal $EXPECTED_URL"
+          EXPECTED_GIT_URL="git+${EXPECTED_URL}"
+          if [ "$REPO_URL" != "$EXPECTED_URL" ] && [ "$REPO_URL" != "$EXPECTED_GIT_URL" ]; then
+            echo "::error::package.json repository.url ($REPO_URL) must equal $EXPECTED_URL or $EXPECTED_GIT_URL"
             exit 1
           fi
 

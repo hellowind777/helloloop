@@ -11,14 +11,13 @@ Use this plugin when the task is continuous repository execution rather than a s
 
 - This bundle root is the official plugin surface for HelloLoop.
 - It ships standard Codex plugin metadata through `.codex-plugin/plugin.json` and a plugin skill through `skills/`.
-- Current Codex runtime does not auto-load Hook handlers from plugins.
-- This plugin therefore does not support `~helloloop` or automatic Stop-hook continuation.
+- This plugin is designed around explicit skill and CLI entrypoints.
 
 ## Setup
 
 1. Install with `npx helloloop install --codex-home <CODEX_HOME>` or use `scripts/install-home-plugin.ps1`.
-2. From the target repository, run `node <helloloop-plugin-root>/scripts/helloloop.mjs doctor --repo <repo-root>`.
-3. From the target repository, run `node <helloloop-plugin-root>/scripts/helloloop.mjs init --repo <repo-root>`.
+2. From the target repository, run `npx helloloop doctor --repo <repo-root>`.
+3. From the target repository, run `npx helloloop init --repo <repo-root>`.
 
 ## Operating Model
 
@@ -35,15 +34,14 @@ Use this plugin when the task is continuous repository execution rather than a s
 
 ## Primary Commands
 
-- `node <helloloop-plugin-root>/scripts/helloloop.mjs status --repo <repo-root>`
-- `node <helloloop-plugin-root>/scripts/helloloop.mjs next --repo <repo-root>`
-- `node <helloloop-plugin-root>/scripts/helloloop.mjs run-once --repo <repo-root>`
-- `node <helloloop-plugin-root>/scripts/helloloop.mjs run-loop --repo <repo-root>`
+- `npx helloloop status --repo <repo-root>`
+- `npx helloloop next --repo <repo-root>`
+- `npx helloloop run-once --repo <repo-root>`
+- `npx helloloop run-loop --repo <repo-root>`
 
 ## Reporting Rules
 
 - State explicitly that the plugin runs in pure official plugin mode.
-- Call out any request that depends on Hook-only behavior such as `UserPromptSubmit` or `Stop`, because those are intentionally unsupported here.
 - Keep Ralph Loop guardrails and repo verification intact.
 
 ## Docs

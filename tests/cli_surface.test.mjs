@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 const pluginEntry = path.join(repoRoot, "scripts", "helloloop.mjs");
-const npmBinEntry = path.join(repoRoot, "bin", "helloloop.mjs");
+const npmBinEntry = path.join(repoRoot, "bin", "helloloop.js");
 
 function writeText(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -58,6 +58,7 @@ test("npm bin 入口支持 install 命令，把插件安装到指定 Codex Home"
   try {
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /HelloLoop 已安装到/);
+    assert.match(result.stdout, /npx helloloop doctor --repo <REPO_ROOT>/);
     assert.ok(fs.existsSync(path.join(tempHome, "plugins", "helloloop", ".codex-plugin", "plugin.json")));
     assert.ok(fs.existsSync(path.join(tempHome, ".agents", "plugins", "marketplace.json")));
     assert.ok(!fs.existsSync(path.join(tempHome, "plugins", "helloloop", "docs")));

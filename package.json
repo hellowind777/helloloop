@@ -1,21 +1,17 @@
 {
   "name": "helloloop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Standalone Codex plugin bundle for backlog-driven repository execution with Ralph Loop guards",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hellowind777/helloloop.git"
-  },
-  "homepage": "https://github.com/hellowind777/helloloop#readme",
-  "bugs": {
-    "url": "https://github.com/hellowind777/helloloop/issues"
+    "url": "git+https://github.com/hellowind777/helloloop.git"
   },
   "publishConfig": {
     "access": "public"
   },
   "bin": {
-    "helloloop": "./bin/helloloop.mjs"
+    "helloloop": "bin/helloloop.js"
   },
   "files": [
     ".codex-plugin",
@@ -28,10 +24,9 @@
     "templates"
   ],
   "scripts": {
-    "test": "node --test tests/cli_surface.test.mjs tests/install_script.test.mjs tests/ralph_loop.test.mjs tests/plugin_bundle.test.mjs"
+    "test": "node --test tests/cli_surface.test.mjs tests/install_script.test.mjs tests/process_shell.test.mjs tests/ralph_loop.test.mjs tests/plugin_bundle.test.mjs"
   },
   "engines": {
     "node": ">=20"
   }
 }
-

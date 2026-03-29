@@ -66,6 +66,57 @@ function buildCmdCommandLine(executable, args) {
   return [quoteForCmd(executable), ...args.map((item) => quoteForCmd(item))].join(" ");
 }
 
+function hasCommand(command, platform = process.platform) {
+  if (platform === "win32") {
+    const result = spawnSync("where.exe", [command], {
+      encoding: "utf8",
+      shell: false,
+    });
+    return result.status === 0;
+  }
+
+  const result = spawnSync("sh", ["-lc", `command -v ${command}`], {
+    encoding: "utf8",
+    shell: false,
+  });
+  return result.status === 0;
+}
+
+export function resolveVerifyShellInvocation(options = {}) {
+  const platform = options.platform || process.platform;
+  const commandExists = options.commandExists || ((command) => hasCommand(command, platform));
+
+  if (platform === "win32") {
+    if (commandExists("pwsh")) {
+      return {
+        command: "pwsh",
+        argsPrefix: ["-NoLogo", "-NoProfile", "-Command"],
+        shell: false,
+      };
+    }
+
+    if (commandExists("powershell")) {
+      return {
+        command: "powershell",
+        argsPrefix: ["-NoLogo", "-NoProfile", "-Command"],
+        shell: false,
+      };
+    }
+
+    return {
+      command: "cmd.exe",
+      argsPrefix: ["/d", "/s", "/c"],
+      shell: false,
+    };
+  }
+
+  return {
+    command: "sh",
+    argsPrefix: ["-lc"],
+    shell: false,
+  };
+}
+
 function resolveCodexExecutable(explicitExecutable = "") {
   if (explicitExecutable) {
     return explicitExecutable;
@@ -214,13 +265,13 @@ export async function runCodexExec({ context, prompt, runDir, policy }) {
 }
 
 export async function runShellCommand(context, commandLine, runDir, index) {
-  const result = await runChild("pwsh", [
-    "-NoLogo",
-    "-NoProfile",
-    "-Command",
+  const shellInvocation = resolveVerifyShellInvocation();
+  const result = await runChild(shellInvocation.command, [
+    ...shellInvocation.argsPrefix,
     commandLine,
   ], {
     cwd: context.repoRoot,
+    shell: shellInvocation.shell,
   });
 
   const prefix = String(index + 1).padStart(2, "0");
