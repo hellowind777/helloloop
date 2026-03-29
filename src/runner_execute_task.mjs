@@ -42,6 +42,18 @@ async function handleEngineFailure(execution, state, attemptState, engineResult)
   if (nextResolution) {
     return { action: "switch", previousFailure, engineResolution: nextResolution };
   }
+  if (engineResult.recoveryFailure?.recoverable === false) {
+    return {
+      action: "return",
+      result: buildFailureResult(
+        execution,
+        "engine-failed",
+        previousFailure,
+        state.failureHistory.length,
+        state.engineResolution,
+      ),
+    };
+  }
   if (isHardStopFailure("engine", previousFailure)) {
     return {
       action: "return",
@@ -83,6 +95,18 @@ async function handleReviewFailure(execution, state, attemptState, reviewResult)
   const nextResolution = await maybeSwitchEngine(execution, state.engineResolution, previousFailure, "任务复核阶段");
   if (nextResolution) {
     return { action: "switch", previousFailure, engineResolution: nextResolution };
+  }
+  if (reviewResult.raw?.recoveryFailure?.recoverable === false) {
+    return {
+      action: "return",
+      result: buildFailureResult(
+        execution,
+        "task-review-failed",
+        previousFailure,
+        state.failureHistory.length,
+        state.engineResolution,
+      ),
+    };
   }
   if (isHardStopFailure("review", previousFailure)) {
     return {

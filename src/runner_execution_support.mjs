@@ -1,10 +1,7 @@
 import {
-  classifySwitchableEngineFailure,
-  promptEngineFallbackAfterFailure,
   rememberEngineSelection,
   resolveEngineSelection,
 } from "./engine_selection.mjs";
-import { getEngineDisplayName } from "./engine_metadata.mjs";
 import { nowIso } from "./common.mjs";
 import {
   loadBacklog,
@@ -16,6 +13,7 @@ import {
 } from "./config.mjs";
 import { getTask, selectNextTask, unresolvedDependencies, updateTask } from "./backlog.mjs";
 import { makeRunDir } from "./runner_status.mjs";
+import { resolveRuntimeRecoveryPolicy } from "./runtime_recovery.mjs";
 
 function resolveTask(backlog, options) {
   if (options.taskId) {
@@ -123,45 +121,12 @@ export function buildDoneResult(execution, finalMessage, attempts, engineResolut
   });
 }
 
-function buildFallbackResolution(engineResolution, fallbackEngine, phaseLabel, reason) {
-  return {
-    ...engineResolution,
-    engine: fallbackEngine,
-    displayName: getEngineDisplayName(fallbackEngine),
-    source: "interactive_fallback",
-    sourceLabel: "故障后交互切换",
-    basis: [
-      `${getEngineDisplayName(engineResolution.engine)} ${phaseLabel}失败。`,
-      reason,
-      `用户改为选择 ${getEngineDisplayName(fallbackEngine)}。`,
-    ],
-  };
-}
-
 export async function maybeSwitchEngine(execution, engineResolution, previousFailure, phaseLabel) {
-  const switchableFailure = classifySwitchableEngineFailure(previousFailure);
-  if (!switchableFailure || execution.options.yes) {
+  const recoveryPolicy = resolveRuntimeRecoveryPolicy(execution.policy);
+  if (!recoveryPolicy.allowEngineSwitch) {
     return null;
   }
-
-  const fallback = await promptEngineFallbackAfterFailure({
-    failedEngine: engineResolution.engine,
-    hostContext: engineResolution.hostContext,
-    probes: engineResolution.probes,
-    failureSummary: switchableFailure.reason,
-  });
-  if (!fallback.ok) {
-    return null;
-  }
-
-  const nextResolution = buildFallbackResolution(
-    engineResolution,
-    fallback.engine,
-    phaseLabel,
-    switchableFailure.reason,
-  );
-  rememberEngineSelection(execution.context, nextResolution, execution.options);
-  return nextResolution;
+  return null;
 }
 
 export function recordFailure(failureHistory, strategyIndex, attemptIndex, kind, summary) {

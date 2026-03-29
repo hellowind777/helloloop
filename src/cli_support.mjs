@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { createInterface } from "node:readline/promises";
 
 import { analyzeExecution, summarizeBacklog } from "./backlog.mjs";
 import { fileExists, readJson } from "./common.mjs";
+import { createPromptSession } from "./prompt_session.mjs";
 import { resolveCliInvocation, resolveCodexInvocation } from "./shell_invocation.mjs";
 
 function probeCodexVersion() {
@@ -288,16 +288,13 @@ function isAffirmativeAnswer(answer) {
 }
 
 export async function confirmAutoExecution() {
-  const readline = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+  const promptSession = createPromptSession();
 
   try {
-    const answer = await readline.question("是否开始自动接续执行？输入 y / yes / 确认 继续，其它任意输入取消：");
+    const answer = await promptSession.question("是否开始自动接续执行？输入 y / yes / 确认 继续，其它任意输入取消：");
     return isAffirmativeAnswer(answer);
   } finally {
-    readline.close();
+    promptSession.close();
   }
 }
 
@@ -308,10 +305,7 @@ export function shouldConfirmRepoRebuild(analysis, discovery) {
 
 export async function confirmRepoConflictResolution(analysis) {
   const decision = analysis?.repoDecision || {};
-  const readline = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+  const promptSession = createPromptSession();
 
   const promptText = [
     "检测到当前项目与开发文档目标存在明显冲突：",
@@ -324,7 +318,7 @@ export async function confirmRepoConflictResolution(analysis) {
   ].join("\n");
 
   try {
-    const answer = String(await readline.question(promptText) || "").trim();
+    const answer = String(await promptSession.question(promptText) || "").trim();
     if (["2", "重建", "rebuild"].includes(answer.toLowerCase ? answer.toLowerCase() : answer)) {
       return "rebuild";
     }
@@ -333,7 +327,7 @@ export async function confirmRepoConflictResolution(analysis) {
     }
     return "cancel";
   } finally {
-    readline.close();
+    promptSession.close();
   }
 }
 

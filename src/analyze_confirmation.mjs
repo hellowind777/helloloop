@@ -153,7 +153,7 @@ function renderEngineResolutionLines(engineResolution) {
     `- 选择来源：${engineResolution.sourceLabel || "自动判断"}`,
     `- 选择依据：${basisText}`,
     `- 当前可用：${availableDisplay}`,
-    "- 故障处理：如果当前引擎在分析或执行阶段遇到登录 / 配额 / 限流问题，HelloLoop 会暂停并询问是否切换其他可用引擎",
+    "- 故障处理：运行中若遇到 429、5xx、网络抖动、流中断或长时间卡死，HelloLoop 会优先按无人值守策略做同引擎自动恢复；只有明确硬阻塞才停止",
   ];
 }
 

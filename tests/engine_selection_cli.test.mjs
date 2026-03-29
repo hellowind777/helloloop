@@ -281,38 +281,120 @@ test("多个可用引擎且未明确指定时会先询问用户选择", () => {
   }
 });
 
-test("当前引擎在分析阶段遇到限流时会提示切换到其他可用引擎", () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-engine-fallback-"));
+test("只有一个可用引擎且未明确指定时也会先询问，不会自动选择", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-engine-single-prompt-"));
   const fakeBin = path.join(tempRoot, "bin");
   const tempRepo = createDemoRepo(tempRoot);
 
   createAgentCli(fakeBin, "codex", {
     versionText: "codex 0.117.0\n",
     analyze: {
-      failAlways: true,
-      errorText: "429 rate limit exceeded\n",
-    },
-  });
-  createAgentCli(fakeBin, "claude", {
-    versionText: "claude 2.1.87\n",
-    analyze: {
       payload: sampleAnalysisPayload(),
     },
   });
+  createUnavailableCli(fakeBin, "claude");
   createUnavailableCli(fakeBin, "gemini");
 
-  const result = spawnHelloLoop(["codex"], {
+  const result = spawnHelloLoop([], {
     cwd: tempRepo,
-    env: buildCliEnv(fakeBin),
+    env: buildCliEnv(fakeBin, {
+      HELLOLOOP_HOST_CONTEXT: "codex",
+    }),
     input: "1\nn\n",
   });
 
   try {
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /Codex 本轮执行失败/);
-    assert.match(result.stdout, /是否切换到其他可用引擎继续/);
-    assert.match(result.stdout, /本次引擎：Claude/);
-    assert.match(result.stdout, /选择来源：故障后交互切换/);
+    assert.match(result.stdout, /本轮开始前必须先明确执行引擎；未明确引擎时不会自动选择/);
+    assert.match(result.stdout, /当前宿主：Codex/);
+    assert.match(result.stdout, /1\. Codex（推荐）/);
+    assert.match(result.stdout, /本次引擎：Codex/);
+    assert.match(result.stdout, /选择来源：交互选择/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("--yes 且未明确指定引擎时会直接失败，要求先显式指定引擎", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-engine-required-"));
+  const fakeBin = path.join(tempRoot, "bin");
+  const tempRepo = createDemoRepo(tempRoot);
+
+  createAgentCli(fakeBin, "codex", {
+    versionText: "codex 0.117.0\n",
+    analyze: {
+      payload: sampleAnalysisPayload(),
+    },
+  });
+  createUnavailableCli(fakeBin, "claude");
+  createUnavailableCli(fakeBin, "gemini");
+
+  const result = spawnHelloLoop(["-y"], {
+    cwd: tempRepo,
+    env: buildCliEnv(fakeBin),
+  });
+
+  try {
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /本轮开始前必须先明确执行引擎；当前未检测到用户已明确指定引擎/);
+    assert.match(result.stderr, /检测到唯一可用执行引擎：Codex/);
+    assert.match(result.stderr, /npx helloloop codex/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("当前引擎在分析阶段遇到限流时会按无人值守策略同引擎自动恢复", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-engine-fallback-"));
+  const fakeBin = path.join(tempRoot, "bin");
+  const tempRepo = createDemoRepo(tempRoot);
+  const codexStateFile = path.join(fakeBin, "codex-state.json");
+
+  createAgentCli(fakeBin, "codex", {
+    versionText: "codex 0.117.0\n",
+    analyze: {
+      failOnce: true,
+      errorText: "429 rate limit exceeded\n",
+      payload: sampleAnalysisPayload(),
+    },
+  });
+  writeJson(path.join(tempRepo, ".helloloop", "policy.json"), {
+    version: 1,
+    updatedAt: "2026-03-30T00:00:00.000Z",
+    maxLoopTasks: 4,
+    maxTaskAttempts: 2,
+    maxTaskStrategies: 4,
+    maxReanalysisPasses: 3,
+    stopOnFailure: false,
+    stopOnHighRisk: true,
+    runtimeRecovery: {
+      enabled: true,
+      allowEngineSwitch: false,
+      heartbeatIntervalSeconds: 1,
+      stallWarningSeconds: 30,
+      maxIdleSeconds: 60,
+      killGraceSeconds: 1,
+      maxPhaseRecoveries: 2,
+      retryDelaysSeconds: [0],
+      retryOnUnknownFailure: true,
+      maxUnknownRecoveries: 1,
+    },
+  });
+  createUnavailableCli(fakeBin, "claude");
+  createUnavailableCli(fakeBin, "gemini");
+
+  const result = spawnHelloLoop(["codex"], {
+    cwd: tempRepo,
+    env: buildCliEnv(fakeBin),
+    input: "n\n",
+  });
+
+  try {
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /本次引擎：Codex/);
+    assert.doesNotMatch(result.stdout, /是否切换到其他可用引擎继续/);
+    const state = JSON.parse(fs.readFileSync(codexStateFile, "utf8"));
+    assert.equal(state.analyze, 2);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

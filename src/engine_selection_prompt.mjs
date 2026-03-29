@@ -1,37 +1,6 @@
-import fs from "node:fs";
-import { createInterface } from "node:readline/promises";
-
 import { getEngineDisplayName } from "./engine_metadata.mjs";
 import { rankEngines } from "./engine_selection_probe.mjs";
-
-function createPromptSession() {
-  if (process.stdin.isTTY) {
-    const readline = createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-    return {
-      async question(promptText) {
-        return readline.question(promptText);
-      },
-      close() {
-        readline.close();
-      },
-    };
-  }
-
-  const bufferedAnswers = fs.readFileSync(0, "utf8").split(/\r?\n/);
-  let answerIndex = 0;
-  return {
-    async question(promptText) {
-      process.stdout.write(promptText);
-      const answer = bufferedAnswers[answerIndex] ?? "";
-      answerIndex += 1;
-      return answer;
-    },
-    close() {},
-  };
-}
+import { createPromptSession } from "./prompt_session.mjs";
 
 function parseAffirmative(answer) {
   const raw = String(answer || "").trim();

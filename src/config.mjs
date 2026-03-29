@@ -18,6 +18,18 @@ const defaultPolicy = {
   maxReanalysisPasses: 3,
   stopOnFailure: false,
   stopOnHighRisk: true,
+  runtimeRecovery: {
+    enabled: true,
+    allowEngineSwitch: false,
+    heartbeatIntervalSeconds: 60,
+    stallWarningSeconds: 900,
+    maxIdleSeconds: 2700,
+    killGraceSeconds: 10,
+    maxPhaseRecoveries: 4,
+    retryDelaysSeconds: [120, 300, 900, 1800],
+    retryOnUnknownFailure: true,
+    maxUnknownRecoveries: 1,
+  },
   codex: {
     model: "",
     executable: "",
@@ -68,6 +80,13 @@ export function loadPolicy(context) {
   policy.gemini = {
     ...defaultPolicy.gemini,
     ...(policy.gemini || {}),
+  };
+  policy.runtimeRecovery = {
+    ...defaultPolicy.runtimeRecovery,
+    ...(policy.runtimeRecovery || {}),
+    retryDelaysSeconds: Array.isArray(policy?.runtimeRecovery?.retryDelaysSeconds)
+      ? policy.runtimeRecovery.retryDelaysSeconds
+      : defaultPolicy.runtimeRecovery.retryDelaysSeconds,
   };
   return policy;
 }

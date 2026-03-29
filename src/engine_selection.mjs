@@ -20,14 +20,92 @@ import { confirmCrossHostSwitch, promptSelectEngine } from "./engine_selection_p
 import { probeExecutionEngines } from "./engine_selection_probe.mjs";
 import { loadUserSettings, resolveUserSettingsFile, saveUserSettings } from "./engine_selection_settings.mjs";
 
-function recommendEngine(hostContext, availableEngines = []) {
-  if (hostContext !== "terminal" && availableEngines.includes(hostContext)) {
-    return hostContext;
-  }
-  if (availableEngines.includes("codex")) {
-    return "codex";
+function preferredRecommendationOrder(hostContext) {
+  return [
+    hostContext !== "terminal" ? hostContext : "",
+    "codex",
+    "claude",
+    "gemini",
+  ].filter(Boolean);
+}
+
+function recommendEngine({
+  hostContext,
+  availableEngines = [],
+  projectConfig = {},
+  userSettings = {},
+}) {
+  const recommendedCandidates = [
+    projectConfig.defaultEngine,
+    projectConfig.lastSelectedEngine,
+    userSettings.defaultEngine,
+    userSettings.lastSelectedEngine,
+    ...preferredRecommendationOrder(hostContext),
+  ].map((item) => normalizeEngineName(item)).filter(Boolean);
+
+  for (const candidate of recommendedCandidates) {
+    if (availableEngines.includes(candidate)) {
+      return candidate;
+    }
   }
   return availableEngines[0] || "";
+}
+
+function buildRecommendationBasis({
+  hostContext,
+  projectConfig = {},
+  userSettings = {},
+  recommendedEngine,
+}) {
+  if (!recommendedEngine) {
+    return "";
+  }
+  if (normalizeEngineName(projectConfig.defaultEngine) === recommendedEngine) {
+    return `推荐：项目默认引擎是 ${getEngineDisplayName(recommendedEngine)}。`;
+  }
+  if (normalizeEngineName(projectConfig.lastSelectedEngine) === recommendedEngine) {
+    return `推荐：项目上次使用的引擎是 ${getEngineDisplayName(recommendedEngine)}。`;
+  }
+  if (normalizeEngineName(userSettings.defaultEngine) === recommendedEngine) {
+    return `推荐：用户默认引擎是 ${getEngineDisplayName(recommendedEngine)}。`;
+  }
+  if (normalizeEngineName(userSettings.lastSelectedEngine) === recommendedEngine) {
+    return `推荐：用户上次使用的引擎是 ${getEngineDisplayName(recommendedEngine)}。`;
+  }
+  if (hostContext !== "terminal" && normalizeEngineName(hostContext) === recommendedEngine) {
+    return `推荐：当前宿主是 ${getHostDisplayName(hostContext)}。`;
+  }
+  return `推荐：当前可用引擎中更适合优先尝试 ${getEngineDisplayName(recommendedEngine)}。`;
+}
+
+async function promptForExplicitEngineSelection({
+  availableEngines,
+  hostContext,
+  projectConfig,
+  userSettings,
+}) {
+  const recommendedEngine = recommendEngine({
+    hostContext,
+    availableEngines,
+    projectConfig,
+    userSettings,
+  });
+  return promptSelectEngine(availableEngines, {
+    hostContext,
+    recommendedEngine,
+    message: [
+      "本轮开始前必须先明确执行引擎；未明确引擎时不会自动选择。",
+      `当前宿主：${getHostDisplayName(hostContext)}。`,
+      buildRecommendationBasis({
+        hostContext,
+        projectConfig,
+        userSettings,
+        recommendedEngine,
+      }),
+      "",
+      "请选择本次要使用的执行引擎：",
+    ].filter(Boolean).join("\n"),
+  });
 }
 
 function buildResolution({
@@ -85,32 +163,6 @@ export async function resolveEngineSelection({
     ]));
   } else if (requestIntent && !requestIntent.ambiguous) {
     candidates.push(candidate(requestIntent.engine, "request_text", requestIntent.basis));
-  }
-
-  if (hostContext !== "terminal") {
-    candidates.push(candidate(hostContext, "host_context", [
-      `当前在 ${getHostDisplayName(hostContext)} 宿主内触发 HelloLoop。`,
-    ]));
-  }
-  if (projectConfig.defaultEngine) {
-    candidates.push(candidate(projectConfig.defaultEngine, "project_default", [
-      `项目配置中记录的默认引擎是 ${getEngineDisplayName(projectConfig.defaultEngine)}。`,
-    ]));
-  }
-  if (projectConfig.lastSelectedEngine) {
-    candidates.push(candidate(projectConfig.lastSelectedEngine, "project_last", [
-      `项目上次使用的引擎是 ${getEngineDisplayName(projectConfig.lastSelectedEngine)}。`,
-    ]));
-  }
-  if (userSettings.defaultEngine) {
-    candidates.push(candidate(userSettings.defaultEngine, "user_default", [
-      `用户默认引擎是 ${getEngineDisplayName(userSettings.defaultEngine)}。`,
-    ]));
-  }
-  if (userSettings.lastSelectedEngine) {
-    candidates.push(candidate(userSettings.lastSelectedEngine, "user_last", [
-      `用户上次使用的引擎是 ${getEngineDisplayName(userSettings.lastSelectedEngine)}。`,
-    ]));
   }
 
   const attempted = new Set();
@@ -174,7 +226,12 @@ export async function resolveEngineSelection({
 
       const fallbackEngine = await promptSelectEngine(availableEngines, {
         hostContext,
-        recommendedEngine: recommendEngine(hostContext, availableEngines),
+        recommendedEngine: recommendEngine({
+          hostContext,
+          availableEngines,
+          projectConfig,
+          userSettings,
+        }),
         message: [
           buildUnavailableRequestedEngineMessage(item.engine, availableEngines, failedProbe),
           "",
@@ -216,31 +273,25 @@ export async function resolveEngineSelection({
     };
   }
 
-  if (availableEngines.length === 1) {
-    const [onlyEngine] = availableEngines;
-    return buildResolution({
-      engine: onlyEngine,
-      source: "only_available",
-      basis: [`当前仅检测到 ${getEngineDisplayName(onlyEngine)} 可用。`],
-      hostContext,
-      probes,
-    });
-  }
-
   if (!interactive) {
     return {
       ok: false,
       code: "engine_selection_required",
-      message: buildEngineSelectionRequiredMessage(hostContext, availableEngines),
+      message: [
+        "本轮开始前必须先明确执行引擎；当前未检测到用户已明确指定引擎。",
+        buildEngineSelectionRequiredMessage(hostContext, availableEngines),
+      ].join("\n\n"),
       hostContext,
       probes,
       availableEngines,
     };
   }
 
-  const selectedEngine = await promptSelectEngine(availableEngines, {
+  const selectedEngine = await promptForExplicitEngineSelection({
+    availableEngines,
     hostContext,
-    recommendedEngine: recommendEngine(hostContext, availableEngines),
+    projectConfig,
+    userSettings,
   });
   if (!selectedEngine) {
     return {
@@ -260,47 +311,6 @@ export async function resolveEngineSelection({
     hostContext,
     probes,
   });
-}
-
-export async function promptEngineFallbackAfterFailure({
-  failedEngine,
-  hostContext = "terminal",
-  probes = [],
-  failureSummary = "",
-} = {}) {
-  const availableEngines = probes
-    .filter((item) => item.ok && item.engine !== failedEngine)
-    .map((item) => item.engine);
-
-  if (!availableEngines.length) {
-    return {
-      ok: false,
-      engine: "",
-    };
-  }
-
-  const selectedEngine = await promptSelectEngine(availableEngines, {
-    hostContext,
-    recommendedEngine: recommendEngine(hostContext, availableEngines),
-    message: [
-      `${getEngineDisplayName(failedEngine)} 本轮执行失败。`,
-      failureSummary || "当前失败疑似来自配额 / 登录 / 鉴权 / 限流问题。",
-      "",
-      "是否切换到其他可用引擎继续？请选择一个引擎：",
-    ].join("\n"),
-  });
-
-  if (!selectedEngine) {
-    return {
-      ok: false,
-      engine: "",
-    };
-  }
-
-  return {
-    ok: true,
-    engine: selectedEngine,
-  };
 }
 
 export function rememberEngineSelection(context, engineResolution, options = {}) {

@@ -7,12 +7,9 @@ import { createContext } from "./context.mjs";
 import { discoverWorkspace } from "./discovery.mjs";
 import { readDocumentPackets } from "./doc_loader.mjs";
 import {
-  classifySwitchableEngineFailure,
-  promptEngineFallbackAfterFailure,
   rememberEngineSelection,
   resolveEngineSelection,
 } from "./engine_selection.mjs";
-import { getEngineDisplayName } from "./engine_metadata.mjs";
 import { runEngineTask } from "./process.mjs";
 import { buildAnalysisPrompt } from "./analyze_prompt.mjs";
 
@@ -187,47 +184,6 @@ async function analyzeResolvedWorkspace(context, discovery, options = {}) {
     outputPrefix: `${engineResolution.engine}-analysis`,
     skipGitRepoCheck: true,
   });
-
-  if (!analysisResult.ok) {
-    const failureText = [
-      analysisResult.stderr,
-      analysisResult.stdout,
-    ].filter(Boolean).join("\n").trim();
-    const switchableFailure = classifySwitchableEngineFailure(failureText);
-    if (switchableFailure && !options.yes) {
-      const fallback = await promptEngineFallbackAfterFailure({
-        failedEngine: engineResolution.engine,
-        hostContext: engineResolution.hostContext,
-        probes: engineResolution.probes,
-        failureSummary: switchableFailure.reason,
-      });
-      if (fallback.ok) {
-        engineResolution = {
-          ...engineResolution,
-          engine: fallback.engine,
-          displayName: getEngineDisplayName(fallback.engine),
-          source: "interactive_fallback",
-          sourceLabel: "故障后交互切换",
-          basis: [
-            `${getEngineDisplayName(engineResolution.engine)} 分析阶段失败。`,
-            switchableFailure.reason,
-            `用户改为选择 ${getEngineDisplayName(fallback.engine)}。`,
-          ],
-        };
-        analysisResult = await runEngineTask({
-          engine: engineResolution.engine,
-          context,
-          prompt,
-          runDir,
-          policy,
-          executionMode: "analyze",
-          outputSchemaFile: schemaFile,
-          outputPrefix: `${engineResolution.engine}-analysis`,
-          skipGitRepoCheck: true,
-        });
-      }
-    }
-  }
 
   if (!analysisResult.ok) {
     return {

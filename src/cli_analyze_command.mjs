@@ -12,12 +12,31 @@ import {
   hasBlockingInputIssues,
   renderBlockingInputIssueMessage,
 } from "./analyze_user_input.mjs";
-import { loadBacklog } from "./config.mjs";
+import { loadBacklog, loadPolicy } from "./config.mjs";
+import { createContext } from "./context.mjs";
 import { createDiscoveryPromptSession, resolveDiscoveryFailureInteractively } from "./discovery_prompt.mjs";
+import { resolveEngineSelection } from "./engine_selection.mjs";
 import { resetRepoForRebuild } from "./rebuild.mjs";
 import { runLoop } from "./runner.mjs";
 import { renderRebuildSummary } from "./cli_render.mjs";
 import { shouldConfirmRepoRebuild } from "./cli_support.mjs";
+
+async function resolveAnalyzeEngineSelection(options) {
+  if (options.engineResolution?.ok) {
+    return options.engineResolution;
+  }
+
+  const provisionalContext = createContext({
+    repoRoot: options.repoRoot || process.cwd(),
+    configDirName: options.configDirName,
+  });
+  return resolveEngineSelection({
+    context: provisionalContext,
+    policy: loadPolicy(provisionalContext),
+    options,
+    interactive: !options.yes,
+  });
+}
 
 async function analyzeWithResolvedDiscovery(options) {
   let currentOptions = { ...options };
@@ -35,6 +54,24 @@ async function analyzeWithResolvedDiscovery(options) {
   }
 
   try {
+    const engineResolution = await resolveAnalyzeEngineSelection(currentOptions);
+    if (!engineResolution.ok) {
+      return {
+        options: currentOptions,
+        result: {
+          ok: false,
+          code: engineResolution.code,
+          summary: engineResolution.message,
+          discovery: null,
+          engineResolution,
+        },
+      };
+    }
+    currentOptions = {
+      ...currentOptions,
+      engineResolution,
+    };
+
     for (let attempt = 0; attempt < 3; attempt += 1) {
       lastResult = await analyzeWorkspace({
         cwd: process.cwd(),

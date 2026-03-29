@@ -12,7 +12,6 @@ const ENGINE_SOURCE_LABELS = {
   user_last: "用户上次引擎",
   only_available: "唯一可用引擎",
   interactive_choice: "交互选择",
-  interactive_fallback: "故障后交互切换",
 };
 
 export function detectEngineIntentFromRequestText(requestText = "") {
@@ -75,8 +74,11 @@ function describeProbeFailures(probes = []) {
 }
 
 export function buildEngineSelectionRequiredMessage(hostContext, availableEngines) {
+  const engineSummary = availableEngines.length > 1
+    ? `检测到可用执行引擎：${renderEngineList(availableEngines)}。`
+    : `检测到唯一可用执行引擎：${renderEngineList(availableEngines)}。`;
   return [
-    `检测到多个可用执行引擎：${renderEngineList(availableEngines)}。`,
+    engineSummary,
     `当前宿主：${getHostDisplayName(hostContext)}。`,
     "请显式指定要使用的引擎，例如：",
     "- `npx helloloop codex`",

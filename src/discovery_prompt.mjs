@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createInterface } from "node:readline/promises";
 
 import {
   listDocFilesInDirectory,
@@ -8,38 +7,14 @@ import {
   pathExists,
   resolveAbsolute,
 } from "./discovery_paths.mjs";
+import { createPromptSession } from "./prompt_session.mjs";
 
 function toDisplayPath(targetPath) {
   return String(targetPath || "").replaceAll("\\", "/");
 }
 
 export function createDiscoveryPromptSession() {
-  if (process.stdin.isTTY) {
-    const readline = createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-    return {
-      async question(promptText) {
-        return readline.question(promptText);
-      },
-      close() {
-        readline.close();
-      },
-    };
-  }
-
-  const bufferedAnswers = fs.readFileSync(0, "utf8").split(/\r?\n/);
-  let answerIndex = 0;
-  return {
-    async question(promptText) {
-      process.stdout.write(promptText);
-      const answer = bufferedAnswers[answerIndex] ?? "";
-      answerIndex += 1;
-      return answer;
-    },
-    close() {},
-  };
+  return createPromptSession();
 }
 
 function summarizeList(items, options = {}) {

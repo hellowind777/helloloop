@@ -42,6 +42,7 @@ export function buildFailureSummary(kind, payload) {
 
   return [
     `${payload.displayName} 执行失败，退出码：${payload.code}`,
+    payload.recoverySummary || "",
     "",
     "stdout 尾部：",
     tailText(payload.stdout, 60),

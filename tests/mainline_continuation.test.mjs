@@ -350,7 +350,7 @@ test("backlog 清空后会自动复分析主线，并继续执行新发现的剩
     writeText(path.join(repoDir, "src", "index.js"), "console.log('hello');\n");
     writeText(path.join(repoDir, ".helloagents", "verify.yaml"), "commands:\n  - node --version\n");
 
-    const result = spawnHelloLoop(["-y"], {
+    const result = spawnHelloLoop(["codex", "-y"], {
       cwd: repoDir,
       env: buildCliEnv(binDir),
     });
