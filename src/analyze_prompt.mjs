@@ -3,6 +3,7 @@ import { renderUserIntentLines } from "./analyze_user_input.mjs";
 import {
   hasCustomProjectConstraints,
   listMandatoryGuardrails,
+  listMandatoryEngineeringPrinciples,
   resolveProjectConstraints,
 } from "./guardrails.mjs";
 
@@ -40,6 +41,7 @@ export function buildAnalysisPrompt({
   userIntent = {},
 }) {
   const mandatoryGuardrails = listMandatoryGuardrails();
+  const mandatoryEngineeringPrinciples = listMandatoryEngineeringPrinciples();
   const effectiveConstraints = resolveProjectConstraints(existingProjectConstraints);
   const usingFallbackConstraints = !hasCustomProjectConstraints(existingProjectConstraints);
   const userIntentLines = renderUserIntentLines(userIntent);
@@ -62,6 +64,7 @@ export function buildAnalysisPrompt({
     listSection("本次命令补充输入", userIntentLines),
     existingStateText ? section("已有状态摘要", existingStateText) : "",
     listSection("内建安全底线", mandatoryGuardrails),
+    listSection("强制编码与产出基线", mandatoryEngineeringPrinciples),
     listSection(usingFallbackConstraints ? "默认工程约束（文档未明确时也必须遵守）" : "已有项目约束", effectiveConstraints),
     existingBacklogText ? section("已有 backlog（供参考，可重组）", existingBacklogText) : "",
     section("文档内容摘录", renderDocPackets(docPackets)),

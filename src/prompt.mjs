@@ -2,6 +2,7 @@ import { formatList } from "./common.mjs";
 import {
   hasCustomProjectConstraints,
   listMandatoryGuardrails,
+  listMandatoryEngineeringPrinciples,
   resolveProjectConstraints,
 } from "./guardrails.mjs";
 
@@ -69,6 +70,7 @@ export function buildTaskPrompt({
     ...(task.docs || []),
   ]);
   const mandatoryGuardrails = listMandatoryGuardrails();
+  const mandatoryEngineeringPrinciples = listMandatoryEngineeringPrinciples();
   const effectiveConstraints = resolveProjectConstraints(constraints);
   const usingFallbackConstraints = !hasCustomProjectConstraints(constraints);
 
@@ -93,6 +95,7 @@ export function buildTaskPrompt({
     listSection("涉及路径", task.paths || []),
     listSection("验收条件", task.acceptance || []),
     listSection("内建安全底线", mandatoryGuardrails),
+    listSection("强制编码与产出基线", mandatoryEngineeringPrinciples),
     listSection(usingFallbackConstraints ? "默认工程约束（文档未明确时生效）" : "项目/用户约束", effectiveConstraints),
     repoStateText ? section("仓库当前状态", repoStateText) : "",
     failureHistory.length
@@ -104,11 +107,12 @@ export function buildTaskPrompt({
     listSection("完成前必须运行的验证", verifyCommands),
     section("交付要求", [
       "1. 直接在仓库中完成实现。",
-      "2. 运行验证；若失败，先分析根因，再修复并重跑。",
-      "3. 同一路径连续失败后，必须明确换一种实现或排查思路。",
-      "4. 除非遇到外部权限、环境损坏、文档缺口等硬阻塞，否则不要停止。",
-      "5. 用简洁中文总结变更、验证结果和剩余风险。",
-      "6. 不要提问，不要等待确认，直接完成。",
+      "2. 用户需求明确且当前任务可完成时，必须一次性做完本轮应交付的全部工作，不要做半成品后停下来问“是否继续”或“如果你要我可以继续”。",
+      "3. 运行验证；若失败，先分析根因，再修复并重跑。",
+      "4. 同一路径连续失败后，必须明确换一种实现或排查思路。",
+      "5. 除非遇到外部权限、环境损坏、文档缺口等硬阻塞，或确实需要用户做关键决策，否则不要停止。",
+      "6. 不要提问，不要等待确认，不要把“下一步建议”当成提前停下的理由，直接完成当前任务。",
+      "7. 最终只用简洁中文总结必要的变更、验证结果和剩余风险；禁止使用“如果你要”“如果你需要进一步…”“希望这对你有帮助”等套话收尾。",
     ].join("\n")),
   ].filter(Boolean).join("\n");
 }

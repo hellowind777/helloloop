@@ -1,336 +1,33 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { spawnSync } from "node:child_process";
-import { createInterface } from "node:readline/promises";
-
-import { fileExists, readJson, writeJson } from "./common.mjs";
 import { loadProjectConfig, saveProjectConfig } from "./config.mjs";
 import {
   getEngineDisplayName,
-  getEngineMetadata,
   getHostDisplayName,
-  listKnownEngines,
   normalizeEngineName,
   normalizeHostContext,
 } from "./engine_metadata.mjs";
-import { resolveCliInvocation } from "./shell_invocation.mjs";
+import { classifySwitchableEngineFailure } from "./engine_selection_failure.mjs";
+import {
+  buildCrossHostSwitchMessage,
+  buildEngineSelectionRequiredMessage,
+  buildNoAvailableEngineMessage,
+  buildUnavailableRequestedEngineMessage,
+  candidate,
+  detectEngineIntentFromRequestText,
+  engineSourceLabel,
+  isUserDirectedSource,
+} from "./engine_selection_messages.mjs";
+import { confirmCrossHostSwitch, promptSelectEngine } from "./engine_selection_prompt.mjs";
+import { probeExecutionEngines } from "./engine_selection_probe.mjs";
+import { loadUserSettings, resolveUserSettingsFile, saveUserSettings } from "./engine_selection_settings.mjs";
 
-const ENGINE_SOURCE_LABELS = {
-  flag: "命令参数",
-  leading_positional: "命令首参数",
-  request_text: "自然语言要求",
-  host_context: "当前宿主",
-  project_default: "项目默认引擎",
-  project_last: "项目上次引擎",
-  user_default: "用户默认引擎",
-  user_last: "用户上次引擎",
-  only_available: "唯一可用引擎",
-  interactive_choice: "交互选择",
-  interactive_fallback: "故障后交互切换",
-};
-
-function createPromptSession() {
-  if (process.stdin.isTTY) {
-    const readline = createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-    return {
-      async question(promptText) {
-        return readline.question(promptText);
-      },
-      close() {
-        readline.close();
-      },
-    };
+function recommendEngine(hostContext, availableEngines = []) {
+  if (hostContext !== "terminal" && availableEngines.includes(hostContext)) {
+    return hostContext;
   }
-
-  const bufferedAnswers = fs.readFileSync(0, "utf8").split(/\r?\n/);
-  let answerIndex = 0;
-  return {
-    async question(promptText) {
-      process.stdout.write(promptText);
-      const answer = bufferedAnswers[answerIndex] ?? "";
-      answerIndex += 1;
-      return answer;
-    },
-    close() {},
-  };
-}
-
-function defaultUserSettings() {
-  return {
-    defaultEngine: "",
-    lastSelectedEngine: "",
-  };
-}
-
-export function resolveUserSettingsFile(userSettingsFile = "") {
-  return userSettingsFile
-    || String(process.env.HELLOLOOP_USER_SETTINGS_FILE || "").trim()
-    || path.join(os.homedir(), ".helloloop", "settings.json");
-}
-
-export function loadUserSettings(options = {}) {
-  const settingsFile = resolveUserSettingsFile(options.userSettingsFile);
-  if (!fileExists(settingsFile)) {
-    return defaultUserSettings();
+  if (availableEngines.includes("codex")) {
+    return "codex";
   }
-
-  const settings = readJson(settingsFile);
-  return {
-    defaultEngine: normalizeEngineName(settings?.defaultEngine),
-    lastSelectedEngine: normalizeEngineName(settings?.lastSelectedEngine),
-  };
-}
-
-export function saveUserSettings(settings, options = {}) {
-  const settingsFile = resolveUserSettingsFile(options.userSettingsFile);
-  writeJson(settingsFile, {
-    defaultEngine: normalizeEngineName(settings?.defaultEngine),
-    lastSelectedEngine: normalizeEngineName(settings?.lastSelectedEngine),
-  });
-}
-
-function resolveExecutableOverride(policy = {}, engine) {
-  const envExecutable = String(process.env[`HELLOLOOP_${String(engine || "").toUpperCase()}_EXECUTABLE`] || "").trim();
-  if (envExecutable) {
-    return envExecutable;
-  }
-  if (engine === "codex") {
-    return String(policy?.codex?.executable || "").trim();
-  }
-  if (engine === "claude") {
-    return String(policy?.claude?.executable || "").trim();
-  }
-  if (engine === "gemini") {
-    return String(policy?.gemini?.executable || "").trim();
-  }
-  return "";
-}
-
-function probeEngineAvailability(engine, policy = {}) {
-  const meta = getEngineMetadata(engine);
-  const invocation = resolveCliInvocation({
-    commandName: meta.commandName,
-    toolDisplayName: meta.displayName,
-    explicitExecutable: resolveExecutableOverride(policy, engine),
-  });
-
-  if (invocation.error) {
-    return {
-      engine,
-      ok: false,
-      detail: invocation.error,
-    };
-  }
-
-  const result = spawnSync(invocation.command, [...invocation.argsPrefix, "--version"], {
-    encoding: "utf8",
-    shell: invocation.shell,
-  });
-  const ok = result.status === 0;
-  return {
-    engine,
-    ok,
-    detail: ok
-      ? String(result.stdout || "").trim()
-      : String(result.stderr || result.error || `无法执行 ${meta.commandName} --version`).trim(),
-  };
-}
-
-export function probeExecutionEngines(policy = {}) {
-  return listKnownEngines().map((engine) => probeEngineAvailability(engine, policy));
-}
-
-function uniqueEngines(items = []) {
-  const result = [];
-  const seen = new Set();
-  for (const item of items) {
-    const normalized = normalizeEngineName(item);
-    if (!normalized || seen.has(normalized)) {
-      continue;
-    }
-    seen.add(normalized);
-    result.push(normalized);
-  }
-  return result;
-}
-
-function rankEngines(engines, hostContext = "terminal") {
-  const preferredOrder = uniqueEngines([
-    hostContext,
-    "codex",
-    "claude",
-    "gemini",
-  ]);
-  return [...engines].sort((left, right) => {
-    const leftIndex = preferredOrder.indexOf(left);
-    const rightIndex = preferredOrder.indexOf(right);
-    const normalizedLeft = leftIndex >= 0 ? leftIndex : Number.MAX_SAFE_INTEGER;
-    const normalizedRight = rightIndex >= 0 ? rightIndex : Number.MAX_SAFE_INTEGER;
-    if (normalizedLeft !== normalizedRight) {
-      return normalizedLeft - normalizedRight;
-    }
-    return left.localeCompare(right, "en");
-  });
-}
-
-function renderEngineList(engines = []) {
-  return rankEngines(uniqueEngines(engines)).map((engine) => getEngineDisplayName(engine)).join("、");
-}
-
-function detectEngineIntentFromRequestText(requestText = "") {
-  const normalized = String(requestText || "").toLowerCase();
-  if (!normalized) {
-    return null;
-  }
-
-  const matches = new Set();
-  const pattern = /(^|[^a-z0-9])(codex|claude|gemini)(?=[^a-z0-9]|$)/g;
-  let match = pattern.exec(normalized);
-  while (match) {
-    matches.add(match[2]);
-    match = pattern.exec(normalized);
-  }
-
-  if (!matches.size) {
-    return null;
-  }
-
-  const engines = [...matches];
-  if (engines.length === 1) {
-    return {
-      engine: engines[0],
-      source: "request_text",
-      basis: [`补充要求里明确提到了 ${getEngineDisplayName(engines[0])}。`],
-      ambiguous: false,
-    };
-  }
-
-  return {
-    engine: "",
-    source: "request_text",
-    basis: [`补充要求里同时提到了多个引擎：${renderEngineList(engines)}。`],
-    ambiguous: true,
-    engines,
-  };
-}
-
-function engineSourceLabel(source) {
-  return ENGINE_SOURCE_LABELS[source] || "自动判断";
-}
-
-function candidate(engine, source, basis = []) {
-  return {
-    engine: normalizeEngineName(engine),
-    source,
-    basis: Array.isArray(basis) ? basis.filter(Boolean) : [],
-  };
-}
-
-function isUserDirectedSource(source) {
-  return ["flag", "leading_positional", "request_text"].includes(source);
-}
-
-function describeProbeFailures(probes = []) {
-  return probes
-    .filter((item) => !item.ok)
-    .map((item) => `- ${getEngineDisplayName(item.engine)}：${item.detail || "不可用"}`);
-}
-
-function buildEngineSelectionRequiredMessage(hostContext, availableEngines) {
-  return [
-    `检测到多个可用执行引擎：${renderEngineList(availableEngines)}。`,
-    `当前宿主：${getHostDisplayName(hostContext)}。`,
-    "请显式指定要使用的引擎，例如：",
-    "- `npx helloloop codex`",
-    "- `npx helloloop claude <PATH>`",
-    "- `npx helloloop gemini <PATH> 继续开发`",
-  ].join("\n");
-}
-
-function buildNoAvailableEngineMessage(hostContext, probes = []) {
-  const failureLines = describeProbeFailures(probes);
-  return [
-    `当前宿主：${getHostDisplayName(hostContext)}。`,
-    "未发现可安全执行的开发引擎（Codex / Claude / Gemini）。",
-    ...(failureLines.length ? ["", "检查结果：", ...failureLines] : []),
-    "",
-    "请先安装并确认至少一个 CLI 可正常执行，然后重试。",
-  ].join("\n");
-}
-
-function buildUnavailableRequestedEngineMessage(engine, availableEngines, probe) {
-  const lines = [
-    `你指定的执行引擎当前不可用：${getEngineDisplayName(engine)}。`,
-  ];
-
-  if (probe?.detail) {
-    lines.push(`原因：${probe.detail}`);
-  }
-  if (availableEngines.length) {
-    lines.push(`当前仍可用的引擎：${renderEngineList(availableEngines)}。`);
-  }
-  lines.push("请改用可用引擎，或先修复该 CLI 的安装 / 登录 / 配额问题。");
-  return lines.join("\n");
-}
-
-function buildCrossHostSwitchMessage(hostContext, engine) {
-  return [
-    `当前从 ${getHostDisplayName(hostContext)} 宿主发起，但本次将改用 ${getEngineDisplayName(engine)} 执行。`,
-    "这不会静默切换；请确认是否继续。",
-  ].join("\n");
-}
-
-function parseAffirmative(answer) {
-  const raw = String(answer || "").trim();
-  const normalized = raw.toLowerCase();
-  return ["y", "yes", "ok", "确认", "是", "继续", "好的"].includes(normalized)
-    || ["确认", "是", "继续", "好的"].includes(raw);
-}
-
-async function confirmCrossHostSwitch(hostContext, engine) {
-  const promptSession = createPromptSession();
-  try {
-    const answer = await promptSession.question(`${buildCrossHostSwitchMessage(hostContext, engine)}\n请输入 y / yes / 确认 继续，其它任意输入取消：`);
-    return parseAffirmative(answer);
-  } finally {
-    promptSession.close();
-  }
-}
-
-async function promptSelectEngine(availableEngines, options = {}) {
-  const promptSession = createPromptSession();
-  const ranked = rankEngines(availableEngines, options.hostContext);
-  const recommendation = normalizeEngineName(options.recommendedEngine);
-  const choiceLines = ranked.map((engine, index) => {
-    const suffix = engine === recommendation ? "（推荐）" : "";
-    return `${index + 1}. ${getEngineDisplayName(engine)}${suffix}`;
-  });
-
-  try {
-    const answer = await promptSession.question([
-      options.message || "请选择本次要使用的执行引擎：",
-      ...choiceLines,
-      "",
-      "请输入编号；直接回车取消。",
-      "> ",
-    ].join("\n"));
-    const choiceIndex = Number(String(answer || "").trim());
-    if (!Number.isInteger(choiceIndex) || choiceIndex < 1 || choiceIndex > ranked.length) {
-      return "";
-    }
-    return ranked[choiceIndex - 1];
-  } finally {
-    promptSession.close();
-  }
-}
-
-export function resolveHostContext(options = {}) {
-  const envCandidate = process.env.HELLOLOOP_HOST_CONTEXT || process.env.HELLOLOOP_HOST;
-  return normalizeHostContext(options.hostContext || envCandidate || "terminal");
+  return availableEngines[0] || "";
 }
 
 function buildResolution({
@@ -353,6 +50,13 @@ function buildResolution({
     probes,
     availableEngines,
   };
+}
+
+export { classifySwitchableEngineFailure, loadUserSettings, probeExecutionEngines, resolveUserSettingsFile, saveUserSettings };
+
+export function resolveHostContext(options = {}) {
+  const envCandidate = process.env.HELLOLOOP_HOST_CONTEXT || process.env.HELLOLOOP_HOST;
+  return normalizeHostContext(options.hostContext || envCandidate || "terminal");
 }
 
 export async function resolveEngineSelection({
@@ -433,7 +137,7 @@ export async function resolveEngineSelection({
           };
         }
 
-        const confirmed = await confirmCrossHostSwitch(hostContext, item.engine);
+        const confirmed = await confirmCrossHostSwitch(hostContext, item.engine, buildCrossHostSwitchMessage);
         if (!confirmed) {
           return {
             ok: false,
@@ -470,9 +174,7 @@ export async function resolveEngineSelection({
 
       const fallbackEngine = await promptSelectEngine(availableEngines, {
         hostContext,
-        recommendedEngine: hostContext !== "terminal" && availableEngines.includes(hostContext)
-          ? hostContext
-          : (availableEngines.includes("codex") ? "codex" : availableEngines[0]),
+        recommendedEngine: recommendEngine(hostContext, availableEngines),
         message: [
           buildUnavailableRequestedEngineMessage(item.engine, availableEngines, failedProbe),
           "",
@@ -538,9 +240,7 @@ export async function resolveEngineSelection({
 
   const selectedEngine = await promptSelectEngine(availableEngines, {
     hostContext,
-    recommendedEngine: hostContext !== "terminal" && availableEngines.includes(hostContext)
-      ? hostContext
-      : (availableEngines.includes("codex") ? "codex" : availableEngines[0]),
+    recommendedEngine: recommendEngine(hostContext, availableEngines),
   });
   if (!selectedEngine) {
     return {
@@ -562,58 +262,6 @@ export async function resolveEngineSelection({
   });
 }
 
-const SWITCHABLE_FAILURE_MATCHERS = [
-  {
-    code: "quota",
-    reason: "当前引擎可能遇到额度、配额或限流问题。",
-    patterns: [
-      "429",
-      "rate limit",
-      "too many requests",
-      "quota",
-      "credit",
-      "usage limit",
-      "capacity",
-      "overloaded",
-      "insufficient balance",
-    ],
-  },
-  {
-    code: "auth",
-    reason: "当前引擎可能未登录、鉴权失效或权限不足。",
-    patterns: [
-      "not authenticated",
-      "authentication",
-      "unauthorized",
-      "forbidden",
-      "login",
-      "api key",
-      "token",
-      "subscription",
-      "setup-token",
-      "sign in",
-    ],
-  },
-];
-
-export function classifySwitchableEngineFailure(detail = "") {
-  const normalized = String(detail || "").toLowerCase();
-  if (!normalized) {
-    return null;
-  }
-
-  for (const matcher of SWITCHABLE_FAILURE_MATCHERS) {
-    if (matcher.patterns.some((pattern) => normalized.includes(pattern))) {
-      return {
-        code: matcher.code,
-        reason: matcher.reason,
-      };
-    }
-  }
-
-  return null;
-}
-
 export async function promptEngineFallbackAfterFailure({
   failedEngine,
   hostContext = "terminal",
@@ -633,9 +281,7 @@ export async function promptEngineFallbackAfterFailure({
 
   const selectedEngine = await promptSelectEngine(availableEngines, {
     hostContext,
-    recommendedEngine: hostContext !== "terminal" && availableEngines.includes(hostContext)
-      ? hostContext
-      : (availableEngines.includes("codex") ? "codex" : availableEngines[0]),
+    recommendedEngine: recommendEngine(hostContext, availableEngines),
     message: [
       `${getEngineDisplayName(failedEngine)} 本轮执行失败。`,
       failureSummary || "当前失败疑似来自配额 / 登录 / 鉴权 / 限流问题。",

@@ -27,7 +27,7 @@
 
 | 宿主 | 安装方式 | 原生入口 | 说明 |
 | --- | --- | --- | --- |
-| `Codex CLI` | `helloloop install --host codex` | `$helloloop` / `npx helloloop` | Codex 原生插件 + CLI |
+| `Codex CLI` | `helloloop install` / `helloloop install --host codex` | `$helloloop` / `npx helloloop` | Codex 原生插件 + CLI |
 | `Claude Code` | `helloloop install --host claude` | `/helloloop` | Claude 原生 marketplace / plugin |
 | `Gemini CLI` | `helloloop install --host gemini` | `/helloloop` | Gemini 原生 extension |
 
@@ -84,6 +84,7 @@ npx helloloop gemini <PATH> 接续完成剩余开发
 - 不会因为执行引擎自己一句“已完成”就直接结束
 - 如果只是部分完成，`HelloLoop` 会继续当前主线任务，而不是跳去做模型随口建议的别的事
 - 如果 backlog 清空了，但主线终态复核仍发现文档目标还有缺口，`HelloLoop` 会自动重新分析并继续推进
+- 如果模型只做了一半就想停下来给“下一步建议”，`HelloLoop` 会优先按主线目标继续推进，而不是把半成品当完成
 
 ## 自动发现与交互逻辑
 
@@ -184,6 +185,7 @@ npx helloloop --rebuild-existing
 默认安装到 `Codex`：
 
 ```bash
+npx helloloop install
 npx helloloop install --codex-home <CODEX_HOME>
 ```
 
@@ -219,9 +221,19 @@ pwsh -NoLogo -NoProfile -File .\scripts\install-home-plugin.ps1 -CodexHome <CODE
 ### 升级、重装、切换分支
 
 ```bash
+npx helloloop install --force
+npx helloloop install --host claude --force
+npx helloloop install --host gemini --force
 npx helloloop install --host codex --force
 npx helloloop install --host all --force
 ```
+
+说明：
+
+- `--force` 会清理当前宿主里旧分支 / 旧版本残留的 `helloloop` 安装目录后再重装
+- `Codex` 会刷新插件目录和 marketplace 条目
+- `Claude` 会刷新 marketplace、缓存插件目录，以及 `settings.json` / `known_marketplaces.json` / `installed_plugins.json` 中的 `helloloop` 条目
+- `Gemini` 会刷新 `extensions/helloloop/`，不会动同目录下其他扩展
 
 ### 卸载
 
@@ -231,6 +243,12 @@ npx helloloop uninstall --host claude
 npx helloloop uninstall --host gemini
 npx helloloop uninstall --host all
 ```
+
+卸载是定向清理：
+
+- 只删除 `helloloop` 自己的安装目录和注册条目
+- 不会顺带删除别的插件、marketplace、扩展或自定义配置
+- 即使某个宿主当前未安装 `helloloop`，也会安全退出，不做破坏性清理
 
 ## 使用入口
 
@@ -324,6 +342,29 @@ npx helloloop doctor --host all
 npx helloloop doctor --host all --codex-home <CODEX_HOME> --claude-home <CLAUDE_HOME> --gemini-home <GEMINI_HOME>
 ```
 
+## 宿主写入范围
+
+为了方便排查安装 / 更新 / 卸载问题，下面是默认写入位置：
+
+### `Codex CLI`
+
+- 插件目录：`~/.codex/plugins/helloloop/`
+- 注册文件：`~/.codex/.agents/plugins/marketplace.json`
+
+### `Claude Code`
+
+- marketplace：`~/.claude/plugins/marketplaces/helloloop-local/`
+- 已安装插件缓存：`~/.claude/plugins/cache/helloloop-local/helloloop/<VERSION>/`
+- 用户配置：`~/.claude/settings.json`
+- marketplace 索引：`~/.claude/plugins/known_marketplaces.json`
+- 已安装插件索引：`~/.claude/plugins/installed_plugins.json`
+
+### `Gemini CLI`
+
+- 扩展目录：`~/.gemini/extensions/helloloop/`
+
+`HelloLoop` 只维护自己的目录和自己的注册项，不会重写别的插件条目。
+
 ## `.helloloop/` 状态目录
 
 `HelloLoop` 的 backlog、状态和运行记录始终写入目标仓库根目录下的：
@@ -358,10 +399,12 @@ npx helloloop doctor --host all --codex-home <CODEX_HOME> --claude-home <CLAUDE_
 
 - 不静默失败
 - 不静默回退
+- 不静默切换执行引擎
 - 不吞掉错误
 - 真正执行前先确认
 - 真正结束前先验证
 - 不轻信执行引擎口头“已完成”
+- 不接受“先做一半再停下来问要不要继续”
 
 ## 仓库结构
 
