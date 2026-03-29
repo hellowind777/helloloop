@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { ensureDir, fileExists, readJson, writeJson } from "./common.mjs";
+import { ensureDir, fileExists, nowIso, readJson, writeJson } from "./common.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,6 +28,8 @@ const codexBundleEntries = runtimeBundleEntries.filter((entry) => ![
 ].includes(entry));
 
 const supportedHosts = ["codex", "claude", "gemini"];
+const CLAUDE_MARKETPLACE_NAME = "helloloop-local";
+const CLAUDE_PLUGIN_KEY = "helloloop@helloloop-local";
 
 function resolveHomeDir(homeDir, defaultDirName) {
   return path.resolve(homeDir || path.join(os.homedir(), defaultDirName));
@@ -118,13 +120,55 @@ function updateClaudeSettings(settingsFile, marketplaceRoot) {
   settings.extraKnownMarketplaces = settings.extraKnownMarketplaces || {};
   settings.enabledPlugins = settings.enabledPlugins || {};
 
-  settings.extraKnownMarketplaces["helloloop-local"] = {
-    source: "directory",
-    path: marketplaceRoot.replaceAll("\\", "/"),
+  settings.extraKnownMarketplaces[CLAUDE_MARKETPLACE_NAME] = {
+    source: {
+      source: "directory",
+      path: marketplaceRoot,
+    },
   };
-  settings.enabledPlugins["helloloop@helloloop-local"] = true;
+  settings.enabledPlugins[CLAUDE_PLUGIN_KEY] = true;
 
   writeJson(settingsFile, settings);
+}
+
+function updateClaudeKnownMarketplaces(knownMarketplacesFile, marketplaceRoot, updatedAt) {
+  const knownMarketplaces = fileExists(knownMarketplacesFile)
+    ? readJson(knownMarketplacesFile)
+    : {};
+
+  knownMarketplaces[CLAUDE_MARKETPLACE_NAME] = {
+    source: {
+      source: "directory",
+      path: marketplaceRoot,
+    },
+    installLocation: marketplaceRoot,
+    lastUpdated: updatedAt,
+  };
+
+  writeJson(knownMarketplacesFile, knownMarketplaces);
+}
+
+function updateClaudeInstalledPlugins(installedPluginsFile, pluginRoot, pluginVersion, updatedAt) {
+  const installedPlugins = fileExists(installedPluginsFile)
+    ? readJson(installedPluginsFile)
+    : {
+        version: 2,
+        plugins: {},
+      };
+
+  installedPlugins.version = 2;
+  installedPlugins.plugins = installedPlugins.plugins || {};
+  installedPlugins.plugins[CLAUDE_PLUGIN_KEY] = [
+    {
+      scope: "user",
+      installPath: pluginRoot,
+      version: pluginVersion,
+      installedAt: updatedAt,
+      lastUpdated: updatedAt,
+    },
+  ];
+
+  writeJson(installedPluginsFile, installedPlugins);
 }
 
 function installCodexHost(bundleRoot, options) {
@@ -165,7 +209,13 @@ function installClaudeHost(bundleRoot, options) {
   const resolvedClaudeHome = resolveHomeDir(options.claudeHome, ".claude");
   const sourceMarketplaceRoot = path.join(bundleRoot, "hosts", "claude", "marketplace");
   const sourceManifest = path.join(bundleRoot, ".claude-plugin", "plugin.json");
-  const targetMarketplaceRoot = path.join(resolvedClaudeHome, "marketplaces", "helloloop-local");
+  const pluginVersion = readJson(sourceManifest).version || readJson(path.join(bundleRoot, "package.json")).version;
+  const targetPluginsRoot = path.join(resolvedClaudeHome, "plugins");
+  const targetMarketplaceRoot = path.join(targetPluginsRoot, "marketplaces", CLAUDE_MARKETPLACE_NAME);
+  const targetCachePluginsRoot = path.join(targetPluginsRoot, "cache", CLAUDE_MARKETPLACE_NAME, "helloloop");
+  const targetInstalledPluginRoot = path.join(targetCachePluginsRoot, pluginVersion);
+  const knownMarketplacesFile = path.join(targetPluginsRoot, "known_marketplaces.json");
+  const installedPluginsFile = path.join(targetPluginsRoot, "installed_plugins.json");
   const settingsFile = path.join(resolvedClaudeHome, "settings.json");
 
   if (!fileExists(sourceManifest)) {
@@ -176,16 +226,24 @@ function installClaudeHost(bundleRoot, options) {
   }
 
   assertPathInside(resolvedClaudeHome, targetMarketplaceRoot, "Claude marketplace 目录");
+  assertPathInside(resolvedClaudeHome, targetInstalledPluginRoot, "Claude 插件缓存目录");
   removeTargetIfNeeded(targetMarketplaceRoot, options.force);
+  removeTargetIfNeeded(targetCachePluginsRoot, options.force);
 
   ensureDir(path.dirname(targetMarketplaceRoot));
+  ensureDir(path.dirname(targetInstalledPluginRoot));
   copyDirectory(sourceMarketplaceRoot, targetMarketplaceRoot);
+  copyDirectory(path.join(sourceMarketplaceRoot, "plugins", "helloloop"), targetInstalledPluginRoot);
+  ensureDir(targetPluginsRoot);
+  const updatedAt = nowIso();
   updateClaudeSettings(settingsFile, targetMarketplaceRoot);
+  updateClaudeKnownMarketplaces(knownMarketplacesFile, targetMarketplaceRoot, updatedAt);
+  updateClaudeInstalledPlugins(installedPluginsFile, targetInstalledPluginRoot, pluginVersion, updatedAt);
 
   return {
     host: "claude",
     displayName: "Claude",
-    targetRoot: path.join(targetMarketplaceRoot, "plugins", "helloloop"),
+    targetRoot: targetInstalledPluginRoot,
     marketplaceFile: path.join(targetMarketplaceRoot, ".claude-plugin", "marketplace.json"),
     settingsFile,
   };

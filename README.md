@@ -112,7 +112,7 @@ pwsh -NoLogo -NoProfile -File .\scripts\install-home-plugin.ps1 -CodexHome <CODE
 安装完成后：
 
 - Codex 会写入 `<CODEX_HOME>/plugins/helloloop`
-- Claude 会写入 `<CLAUDE_HOME>/marketplaces/helloloop-local`
+- Claude 会写入 `<CLAUDE_HOME>/plugins/marketplaces/helloloop-local`，并生成 `<CLAUDE_HOME>/plugins/cache/helloloop-local/helloloop/<VERSION>`
 - Gemini 会写入 `<GEMINI_HOME>/extensions/helloloop`
 
 如果你想在安装后做一次全宿主环境检查：

@@ -3,10 +3,12 @@
   "owner": {
     "name": "HelloLoop"
   },
+  "metadata": {
+    "description": "HelloLoop 的 Claude Code 本地 marketplace，提供基于开发文档的分析、确认与自动接续开发工作流。"
+  },
   "plugins": [
     {
       "name": "helloloop",
-      "displayName": "HelloLoop",
       "description": "基于开发文档分析当前进度、展示确认单，并在确认后继续接续开发的 Claude Code 原生插件。",
       "source": "./plugins/helloloop"
     }

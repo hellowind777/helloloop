@@ -21,6 +21,22 @@
 
 `docs/` 和 `tests/` 属于源码仓库资料，不会复制进安装后的运行时 bundle。
 
+其他宿主的安装结果：
+
+```text
+<CLAUDE_HOME>/
+├── plugins/
+│   ├── cache/helloloop-local/helloloop/<VERSION>/
+│   ├── installed_plugins.json
+│   ├── known_marketplaces.json
+│   └── marketplaces/helloloop-local/
+└── settings.json
+
+<GEMINI_HOME>/
+└── extensions/
+    └── helloloop/
+```
+
 ## 推荐安装
 
 ### 方案 A：npm / npx
@@ -59,6 +75,11 @@ pwsh -NoLogo -NoProfile -File .\scripts\install-home-plugin.ps1 -CodexHome <CODE
 ```
 
 如果目标目录已存在，追加 `--force` 或 `-Force` 即可覆盖。
+
+其中：
+
+- `Claude` 会按当前 CLI 的标准目录生成 marketplace、cache 与安装索引文件
+- `Gemini` 会把扩展写入 `<GEMINI_HOME>/extensions/helloloop`
 
 ## 安装后怎么用
 

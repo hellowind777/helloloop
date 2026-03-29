@@ -11,6 +11,9 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 const pluginEntry = path.join(repoRoot, "scripts", "helloloop.mjs");
 const npmBinEntry = path.join(repoRoot, "bin", "helloloop.js");
+const packageVersion = JSON.parse(
+  fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"),
+).version;
 
 function writeText(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -111,6 +114,7 @@ test("install --host all 会同时安装 Codex、Claude 和 Gemini 宿主资产"
 
     assert.ok(fs.existsSync(path.join(
       claudeHome,
+      "plugins",
       "marketplaces",
       "helloloop-local",
       ".claude-plugin",
@@ -118,20 +122,27 @@ test("install --host all 会同时安装 Codex、Claude 和 Gemini 宿主资产"
     )));
     assert.ok(fs.existsSync(path.join(
       claudeHome,
-      "marketplaces",
-      "helloloop-local",
       "plugins",
+      "cache",
+      "helloloop-local",
       "helloloop",
+      packageVersion,
       ".claude-plugin",
       "plugin.json",
     )));
     assert.ok(fs.existsSync(path.join(claudeHome, "settings.json")));
+    assert.ok(fs.existsSync(path.join(claudeHome, "plugins", "known_marketplaces.json")));
+    assert.ok(fs.existsSync(path.join(claudeHome, "plugins", "installed_plugins.json")));
 
     const claudeSettings = JSON.parse(fs.readFileSync(path.join(claudeHome, "settings.json"), "utf8"));
     assert.equal(claudeSettings.enabledPlugins["helloloop@helloloop-local"], true);
     assert.equal(
-      claudeSettings.extraKnownMarketplaces["helloloop-local"].source,
+      claudeSettings.extraKnownMarketplaces["helloloop-local"].source.source,
       "directory",
+    );
+    assert.equal(
+      claudeSettings.extraKnownMarketplaces["helloloop-local"].source.path,
+      path.join(claudeHome, "plugins", "marketplaces", "helloloop-local"),
     );
 
     assert.ok(fs.existsSync(path.join(geminiHome, "extensions", "helloloop", "gemini-extension.json")));
@@ -262,6 +273,8 @@ test("doctor --host all 会同时检查 Codex、Claude 和 Gemini 宿主条件",
     assert.match(result.stdout, /OK  codex CLI/);
     assert.match(result.stdout, /OK  claude CLI/);
     assert.match(result.stdout, /OK  gemini CLI/);
+    assert.match(result.stdout, /OK  claude marketplace registry/);
+    assert.match(result.stdout, /OK  claude installed plugin index/);
     assert.match(result.stdout, /OK  claude installed plugin/);
     assert.match(result.stdout, /OK  gemini installed extension/);
   } finally {

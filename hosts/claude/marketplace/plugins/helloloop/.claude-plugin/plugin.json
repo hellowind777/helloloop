@@ -1,6 +1,6 @@
 {
   "name": "helloloop",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "HelloLoop 的 Claude Code 原生插件。",
   "author": {
     "name": "HelloLoop"

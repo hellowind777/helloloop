@@ -151,16 +151,36 @@ function collectClaudeDoctorChecks(context, options = {}) {
 
   if (options.claudeHome) {
     const settingsFile = path.join(options.claudeHome, "settings.json");
+    const knownMarketplacesFile = path.join(options.claudeHome, "plugins", "known_marketplaces.json");
+    const installedPluginsFile = path.join(options.claudeHome, "plugins", "installed_plugins.json");
     const settings = fileExists(settingsFile) ? readJson(settingsFile) : {};
+    const installedPlugins = fileExists(installedPluginsFile) ? readJson(installedPluginsFile) : {};
+    const installs = Array.isArray(installedPlugins?.plugins?.["helloloop@helloloop-local"])
+      ? installedPlugins.plugins["helloloop@helloloop-local"]
+      : [];
+    const installedPluginRoot = installs[0]?.installPath
+      ? String(installs[0].installPath)
+      : path.join(options.claudeHome, "plugins", "cache", "helloloop-local", "helloloop");
+
     checks.push({
       name: "claude installed marketplace",
-      ok: fileExists(path.join(options.claudeHome, "marketplaces", "helloloop-local", ".claude-plugin", "marketplace.json")),
-      detail: path.join(options.claudeHome, "marketplaces", "helloloop-local", ".claude-plugin", "marketplace.json"),
+      ok: fileExists(path.join(options.claudeHome, "plugins", "marketplaces", "helloloop-local", ".claude-plugin", "marketplace.json")),
+      detail: path.join(options.claudeHome, "plugins", "marketplaces", "helloloop-local", ".claude-plugin", "marketplace.json"),
+    });
+    checks.push({
+      name: "claude marketplace registry",
+      ok: fileExists(knownMarketplacesFile),
+      detail: knownMarketplacesFile,
+    });
+    checks.push({
+      name: "claude installed plugin index",
+      ok: fileExists(installedPluginsFile),
+      detail: installedPluginsFile,
     });
     checks.push({
       name: "claude installed plugin",
-      ok: fileExists(path.join(options.claudeHome, "marketplaces", "helloloop-local", "plugins", "helloloop", ".claude-plugin", "plugin.json")),
-      detail: path.join(options.claudeHome, "marketplaces", "helloloop-local", "plugins", "helloloop", ".claude-plugin", "plugin.json"),
+      ok: fileExists(path.join(installedPluginRoot, ".claude-plugin", "plugin.json")),
+      detail: path.join(installedPluginRoot, ".claude-plugin", "plugin.json"),
     });
     checks.push({
       name: "claude settings enabled",
