@@ -10,6 +10,7 @@ const __dirname = path.dirname(__filename);
 
 export const runtimeBundleEntries = [
   ".codex-plugin",
+  "LICENSE",
   "README.md",
   "bin",
   "package.json",

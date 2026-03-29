@@ -32,6 +32,7 @@ helloloop/
 安装后的运行时 bundle 只带以下内容：
 
 - `.codex-plugin/`
+- `LICENSE`
 - `bin/`
 - `scripts/`
 - `skills/`
@@ -97,3 +98,7 @@ npm test
 ```
 
 它覆盖安装链路、CLI 表面、bundle 结构和分析链路的关键回归。
+
+## 许可证
+
+运行时 bundle 也会携带 `LICENSE`，当前许可证为 `Apache-2.0`。

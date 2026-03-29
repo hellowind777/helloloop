@@ -28,7 +28,7 @@ const mandatoryGuardrails = [
   "所有 shell 操作优先使用结构化命令与参数，避免字符串拼接命令。",
   "涉及路径的 shell 操作必须正确引用路径，避免空格、中文、特殊字符造成路径逃逸。",
   "涉及多路径或多子命令时必须拆成多次独立执行，禁止把多个路径操作拼接进单条命令。",
-  "Windows 环境禁止使用 cmd /c、cmd.exe、Start-Process cmd 或任何 cmd 嵌套命令；只允许 pwsh 或 powershell。",
+  "Windows 环境禁止使用 cmd /c、cmd.exe、Start-Process cmd 或任何 cmd 嵌套命令；只允许 pwsh、bash（如 Git Bash）或 powershell 这类安全 shell。",
   "涉及删除、移动、覆盖等危险文件操作前，必须先确认目标路径位于当前仓库或用户明确允许的目录内。",
   "禁止执行 EHRB 高风险命令或其等价危险操作，例如 rm -rf /、git reset --hard、DROP DATABASE、FLUSHALL 等。",
   "不得把密钥、令牌、.env、PII、真实绝对隐私路径写入代码、日志、文档和最终输出。",

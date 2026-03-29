@@ -71,9 +71,13 @@ npx helloloop --repo <REPO_ROOT> --docs <DOCS_PATH>
 
 ## Windows 说明
 
-- `HelloLoop` 在 Windows 只使用 `pwsh` 或 `powershell` 执行验证和脚本，不会回退到 `cmd.exe`。
-- 如果你的环境缺少这两个 PowerShell 入口，`HelloLoop` 会直接停止并提示修复环境。
+- `HelloLoop` 在 Windows 优先使用 `pwsh`，也支持 `bash`（如 Git Bash）和 `powershell`，不会回退到 `cmd.exe`。
+- 如果你的环境缺少这些安全 shell，`HelloLoop` 会直接停止并提示修复环境。
 - 这样做是为了避免路径转义、嵌套命令和危险文件操作在 Windows 上被错误展开。
+
+## 许可证
+
+`HelloLoop` 使用 `Apache-2.0`，许可证文件为仓库根目录下的 `LICENSE`。
 
 ## 在 Codex 里执行
 

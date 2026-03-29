@@ -12,9 +12,11 @@
 - [安装](#安装)
 - [快速开始](#快速开始)
 - [路径规则](#路径规则)
+- [安全底线](#安全底线)
 - [命令速查](#命令速查)
 - [状态目录](#状态目录)
 - [在 Codex 中使用](#在-codex-中使用)
+- [许可证](#许可证)
 - [仓库结构](#仓库结构)
 - [相关文档](#相关文档)
 
@@ -38,7 +40,7 @@
 同时，`HelloLoop` 自带一层内建安全底线：
 
 - 开发文档缺少必要约束时，自动补上默认工程约束
-- Windows 端只使用 `pwsh` / `powershell`，不回退到 `cmd`
+- Windows 端优先使用 `pwsh`，也支持 `bash`（如 Git Bash）和 `powershell`，但不回退到 `cmd`
 - 所有流程都要求避免静默失败、危险命令和隐私信息泄露
 
 ## 安装
@@ -138,7 +140,8 @@ npx helloloop --repo <REPO_ROOT> --docs <DOCS_PATH>
 - `HelloLoop` 会始终附加一组内建安全底线，覆盖 shell 安全、EHRB 命令阻断、跨平台兼容和静默失败防护。
 - 如果项目开发文档或 `.helloloop/project.json` 已有明确约束，则优先使用项目约束；内建安全底线继续作为最低边界。
 - 如果项目没有给出必要约束，则自动启用默认工程约束，例如代码是事实源、体积控制、验证必须执行、阻塞必须明确说明。
-- Windows 环境下，`HelloLoop` 只允许 `pwsh` 或 `powershell`；如果两者都不可用，会直接停止，而不是回退到 `cmd.exe`。
+- Windows 环境下，`HelloLoop` 优先使用 `pwsh`，也支持 `bash`（如 Git Bash）和 `powershell`；如果这些安全 shell 都不可用，会直接停止，而不是回退到 `cmd.exe`。
+- macOS / Linux 环境下，`HelloLoop` 优先使用 `bash`，没有 `bash` 时再回退到 `sh`。
 
 ## 命令速查
 
@@ -219,6 +222,10 @@ helloloop:helloloop
 - 在当前 Codex 会话里，直接运行 `npx helloloop ...` 即可，不需要重开终端
 - 如果你使用的是全局安装后的 `helloloop` 短命令，是否需要新终端取决于你的 shell 是否已经刷新 PATH
 - `HelloLoop` 负责组织分析、backlog 和执行流程，真正的代码分析与开发仍然通过本机 `codex` CLI 完成
+
+## 许可证
+
+`HelloLoop` 使用 `Apache-2.0` 许可证，许可证文件位于仓库根目录 `LICENSE`。
 
 ## 仓库结构
 

@@ -64,6 +64,63 @@ function resolveWindowsPowerShellHost(options = {}) {
   return null;
 }
 
+function resolveWindowsCommandShell(options = {}) {
+  const commandExists = options.commandExists || ((command) => hasCommand(command, "win32"));
+  const preferredHosts = [
+    {
+      check: "pwsh",
+      invocation: {
+        command: "pwsh",
+        argsPrefix: ["-NoLogo", "-NoProfile", "-Command"],
+        shell: false,
+      },
+    },
+    {
+      check: "bash",
+      invocation: {
+        command: "bash",
+        argsPrefix: ["-lc"],
+        shell: false,
+      },
+    },
+    {
+      check: "powershell",
+      invocation: {
+        command: "powershell",
+        argsPrefix: ["-NoLogo", "-NoProfile", "-Command"],
+        shell: false,
+      },
+    },
+  ];
+
+  for (const host of preferredHosts) {
+    if (commandExists(host.check)) {
+      return host.invocation;
+    }
+  }
+
+  return null;
+}
+
+function resolvePosixCommandShell(options = {}) {
+  const platform = options.platform || process.platform;
+  const commandExists = options.commandExists || ((command) => hasCommand(command, platform));
+
+  if (commandExists("bash")) {
+    return {
+      command: "bash",
+      argsPrefix: ["-lc"],
+      shell: false,
+    };
+  }
+
+  return {
+    command: "sh",
+    argsPrefix: ["-lc"],
+    shell: false,
+  };
+}
+
 function isCmdLikeExecutable(executable) {
   return /\.(cmd|bat)$/i.test(String(executable || ""));
 }
@@ -91,25 +148,16 @@ export function resolveVerifyShellInvocation(options = {}) {
   const platform = options.platform || process.platform;
 
   if (platform === "win32") {
-    const host = resolveWindowsPowerShellHost(options);
+    const host = resolveWindowsCommandShell(options);
     if (!host) {
       return createUnavailableInvocation(
-        "Windows 环境需要 pwsh 或 powershell 才能安全执行验证命令；HelloLoop 已禁止回退到 cmd.exe。",
+        "Windows 环境需要 pwsh、bash（如 Git Bash）或 powershell 才能安全执行验证命令；HelloLoop 已禁止回退到 cmd.exe。",
       );
     }
-
-    return {
-      command: host.command,
-      argsPrefix: ["-NoLogo", "-NoProfile", "-Command"],
-      shell: host.shell,
-    };
+    return host;
   }
 
-  return {
-    command: "sh",
-    argsPrefix: ["-lc"],
-    shell: false,
-  };
+  return resolvePosixCommandShell(options);
 }
 
 export function resolveCodexInvocation(options = {}) {

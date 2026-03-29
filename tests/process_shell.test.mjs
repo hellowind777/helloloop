@@ -19,7 +19,20 @@ test("验证命令在 Windows 优先使用 pwsh", () => {
   });
 });
 
-test("验证命令在 Windows 无 pwsh 时回退到 powershell", () => {
+test("验证命令在 Windows 无 pwsh 时优先回退到 bash", () => {
+  const result = resolveVerifyShellInvocation({
+    platform: "win32",
+    commandExists: (command) => command === "bash",
+  });
+
+  assert.deepEqual(result, {
+    command: "bash",
+    argsPrefix: ["-lc"],
+    shell: false,
+  });
+});
+
+test("验证命令在 Windows 无 pwsh 和 bash 时回退到 powershell", () => {
   const result = resolveVerifyShellInvocation({
     platform: "win32",
     commandExists: (command) => command === "powershell",
@@ -43,12 +56,36 @@ test("验证命令在 Windows 无 PowerShell 时直接报错，不再回退到 c
   assert.match(result.error, /禁止回退到 cmd\.exe/);
 });
 
-test("验证命令在 macOS 和 Linux 使用 sh", () => {
+test("验证命令在 macOS 和 Linux 优先使用 bash", () => {
   const linuxResult = resolveVerifyShellInvocation({
     platform: "linux",
+    commandExists: (command) => command === "bash",
   });
   const darwinResult = resolveVerifyShellInvocation({
     platform: "darwin",
+    commandExists: (command) => command === "bash",
+  });
+
+  assert.deepEqual(linuxResult, {
+    command: "bash",
+    argsPrefix: ["-lc"],
+    shell: false,
+  });
+  assert.deepEqual(darwinResult, {
+    command: "bash",
+    argsPrefix: ["-lc"],
+    shell: false,
+  });
+});
+
+test("验证命令在 macOS 和 Linux 无 bash 时回退到 sh", () => {
+  const linuxResult = resolveVerifyShellInvocation({
+    platform: "linux",
+    commandExists: () => false,
+  });
+  const darwinResult = resolveVerifyShellInvocation({
+    platform: "darwin",
+    commandExists: () => false,
   });
 
   assert.deepEqual(linuxResult, {

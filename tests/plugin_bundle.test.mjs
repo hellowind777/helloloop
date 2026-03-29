@@ -33,6 +33,7 @@ test("npm 分发白名单只包含运行时所需文件", () => {
   });
   assert.deepEqual(packageJson.files, [
     ".codex-plugin",
+    "LICENSE",
     "README.md",
     "bin",
     "package.json",
@@ -44,6 +45,7 @@ test("npm 分发白名单只包含运行时所需文件", () => {
 });
 
 test("HelloLoop 独立 bundle 的脚本、安装入口和文档目录都已落地", () => {
+  assert.ok(fs.existsSync(path.join(repoRoot, "LICENSE")));
   assert.ok(fs.existsSync(path.join(repoRoot, "scripts", "helloloop.mjs")));
   assert.ok(fs.existsSync(path.join(repoRoot, "scripts", "install-home-plugin.ps1")));
   assert.ok(fs.existsSync(path.join(repoRoot, "skills", "helloloop", "SKILL.md")));
@@ -62,6 +64,17 @@ test("README 使用短命令示例且不暴露本机绝对路径", () => {
   assert.match(readme, /npx helloloop next/);
   assert.doesNotMatch(readme, /C:\\Users\\/);
   assert.doesNotMatch(readme, /D:\\GitHub\\dev\\/);
+});
+
+test("许可证信息与运行时元数据已对齐 Apache-2.0", () => {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+  const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, ".codex-plugin", "plugin.json"), "utf8"));
+  const licenseText = fs.readFileSync(path.join(repoRoot, "LICENSE"), "utf8");
+
+  assert.equal(packageJson.license, "Apache-2.0");
+  assert.equal(manifest.license, "Apache-2.0");
+  assert.match(licenseText, /Apache License/);
+  assert.match(licenseText, /Version 2\.0, January 2004/);
 });
 
 test("公开文档不再包含旧命令流和无关发布说明", () => {

@@ -1,11 +1,11 @@
 {
   "name": "helloloop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "面向 Codex 的 backlog 驱动持续开发插件，支持进度分析、验证循环与显式 skill / CLI 入口。",
   "author": {
     "name": "HelloLoop"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": [
     "codex",
     "helloloop",

@@ -69,6 +69,7 @@
 3. `.helloloop/` 目录属于目标仓库，不属于插件 bundle
 4. 安装动作只负责复制运行时 bundle 并更新 marketplace
 5. 日常工作流优先使用 `npx helloloop` 或 `npx helloloop <PATH>`
+6. Windows 端允许 `pwsh`、`bash`、`powershell` 这类安全 shell，但不允许回退到 `cmd.exe`
 
 ## 当前工作流
 

@@ -1,7 +1,10 @@
 {
   "name": "helloloop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "面向 Codex 的独立插件 bundle，用于基于 backlog 持续推进仓库开发并执行验证循环",
+  "author": "HelloWind",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/hellowind777/helloloop",
   "type": "module",
   "repository": {
     "type": "git",
@@ -15,6 +18,7 @@
   },
   "files": [
     ".codex-plugin",
+    "LICENSE",
     "README.md",
     "bin",
     "package.json",
