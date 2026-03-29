@@ -22,7 +22,7 @@ Use this plugin when the task is continuous repository execution rather than a s
 
 ## Operating Model
 
-- `.helloloop/` is the CLI and backlog state directory.
+- `.helloloop/` is the default CLI and backlog state directory.
 - The installed plugin bundle keeps runtime files such as `src/`, `templates/`, `bin/`, `scripts/`, and `skills/`.
 - Source-only materials such as `docs/` and `tests/` stay in the development repository.
 

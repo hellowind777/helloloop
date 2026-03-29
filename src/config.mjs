@@ -98,7 +98,7 @@ export function loadVerifyCommands(context) {
 }
 
 export function loadRepoStateText(context) {
-  return readTextIfExists(context.repoStateFile, "").trim();
+  return readTextIfExists(context.stateFile, "").trim();
 }
 
 export function writeStatus(context, status) {

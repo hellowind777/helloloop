@@ -193,8 +193,6 @@ helloloop:helloloop
 - `STATE.md`：给人看的当前状态摘要
 - `runs/`：每次任务执行的提示词、stdout、stderr 和验证记录
 
-如果旧仓库仍保留 `.helloagents/helloloop/`，当前版本也会自动识别；你也可以显式传 `--config-dir .helloagents/helloloop`。
-
 ## 任务与执行模型
 
 ### backlog 任务字段
