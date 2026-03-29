@@ -32,10 +32,12 @@ test("npm 分发白名单只包含运行时所需文件", () => {
     helloloop: "bin/helloloop.js",
   });
   assert.deepEqual(packageJson.files, [
+    ".claude-plugin",
     ".codex-plugin",
     "LICENSE",
     "README.md",
     "bin",
+    "hosts",
     "package.json",
     "scripts",
     "skills",
@@ -46,9 +48,13 @@ test("npm 分发白名单只包含运行时所需文件", () => {
 
 test("HelloLoop 独立 bundle 的脚本、安装入口和文档目录都已落地", () => {
   assert.ok(fs.existsSync(path.join(repoRoot, "LICENSE")));
+  assert.ok(fs.existsSync(path.join(repoRoot, ".claude-plugin", "plugin.json")));
   assert.ok(fs.existsSync(path.join(repoRoot, "scripts", "helloloop.mjs")));
   assert.ok(fs.existsSync(path.join(repoRoot, "scripts", "install-home-plugin.ps1")));
   assert.ok(fs.existsSync(path.join(repoRoot, "skills", "helloloop", "SKILL.md")));
+  assert.ok(fs.existsSync(path.join(repoRoot, "hosts", "claude", "marketplace", ".claude-plugin", "marketplace.json")));
+  assert.ok(fs.existsSync(path.join(repoRoot, "hosts", "gemini", "extension", "gemini-extension.json")));
+  assert.ok(fs.existsSync(path.join(repoRoot, "hosts", "gemini", "extension", "commands", "helloloop.toml")));
   assert.ok(fs.existsSync(path.join(repoRoot, "docs", "README.md")));
   assert.ok(fs.existsSync(path.join(repoRoot, "docs", "install.md")));
   assert.ok(fs.existsSync(path.join(repoRoot, "docs", "plugin-standard.md")));
@@ -69,10 +75,12 @@ test("README 使用短命令示例且不暴露本机绝对路径", () => {
 test("许可证信息与运行时元数据已对齐 Apache-2.0", () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
   const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, ".codex-plugin", "plugin.json"), "utf8"));
+  const claudeManifest = JSON.parse(fs.readFileSync(path.join(repoRoot, ".claude-plugin", "plugin.json"), "utf8"));
   const licenseText = fs.readFileSync(path.join(repoRoot, "LICENSE"), "utf8");
 
   assert.equal(packageJson.license, "Apache-2.0");
   assert.equal(manifest.license, "Apache-2.0");
+  assert.equal(claudeManifest.license, "Apache-2.0");
   assert.match(licenseText, /Apache License/);
   assert.match(licenseText, /Version 2\.0, January 2004/);
 });
@@ -98,4 +106,18 @@ test("公开文档不再包含旧命令流和无关发布说明", () => {
   for (const snippet of forbiddenSnippets) {
     assert.equal(combined.includes(snippet), false, `unexpected snippet: ${snippet}`);
   }
+});
+
+test("helloloop skill 明确要求优先走主 CLI，而不是手工模拟流程", () => {
+  const skill = fs.readFileSync(path.join(repoRoot, "skills", "helloloop", "SKILL.md"), "utf8");
+  const manifest = JSON.parse(fs.readFileSync(
+    path.join(repoRoot, ".codex-plugin", "plugin.json"),
+    "utf8",
+  ));
+
+  assert.match(skill, /优先执行 `npx helloloop` 或 `npx helloloop <PATH>`/);
+  assert.match(skill, /不允许在对话里手工模拟/);
+  assert.match(skill, /默认执行映射/);
+  assert.match(manifest.interface.longDescription, /先分析、再展示确认单、确认后自动接续推进/);
+  assert.match(manifest.interface.defaultPrompt[0], /优先执行 npx helloloop 或 npx helloloop <PATH>/);
 });

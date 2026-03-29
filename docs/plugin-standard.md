@@ -1,6 +1,9 @@
 # HelloLoop 插件标准映射
 
-本文只回答一个问题：按 `openai/codex` 与 `openai/plugins` 当前源码边界，独立目录版 `HelloLoop` 应该如何组织为标准插件。
+本文回答两个问题：
+
+1. `HelloLoop` 如何按 `Codex` 最新插件标准组织
+2. `HelloLoop` 如何同时兼容 `Claude Code` 与 `Gemini CLI` 的宿主资产
 
 ## 上游快照
 
@@ -48,11 +51,14 @@
 ### 插件根目录
 
 - `.codex-plugin/plugin.json`
+- `.claude-plugin/plugin.json`
 - `skills/helloloop/SKILL.md`
 - `bin/helloloop.js`
 - `scripts/helloloop.mjs`
 - `src/`
 - `templates/`
+- `hosts/claude/...`
+- `hosts/gemini/...`
 
 ### 外部注册
 
@@ -69,22 +75,36 @@
 3. `.helloloop/` 目录属于目标仓库，不属于插件 bundle
 4. 安装动作只负责复制运行时 bundle 并更新 marketplace
 5. 日常工作流优先使用 `npx helloloop` 或 `npx helloloop <PATH>`
-6. Windows 端允许 `pwsh`、`bash`、`powershell` 这类安全 shell，但不允许回退到 `cmd.exe`
+6. 主命令必须先展示执行确认单，再在用户确认后自动接续执行
+7. `Claude` 与 `Gemini` 走各自原生 plugin / extension 工作流
+8. Windows 端允许 `pwsh`、`bash`、`powershell` 这类安全 shell，但不允许回退到 `cmd.exe`
 
 ## 当前工作流
 
 推荐的实际使用顺序：
 
-```powershell
+```bash
 npx helloloop install --codex-home <CODEX_HOME>
 npx helloloop
-npx helloloop next
-npx helloloop run-once
+```
+
+主命令会自动完成：
+
+1. 识别仓库和开发文档
+2. 对比当前代码与文档目标
+3. 生成 backlog 与状态目录
+4. 输出执行确认单
+5. 经确认后继续自动开发、测试和验收
+
+如果只想先看分析结果：
+
+```bash
+npx helloloop --dry-run
 ```
 
 如果自动发现无法判断仓库或开发文档，再补充：
 
-```powershell
+```bash
 npx helloloop --repo <REPO_ROOT> --docs <DOCS_PATH>
 ```
 

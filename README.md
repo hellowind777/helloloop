@@ -1,200 +1,315 @@
 # HelloLoop
 
-`HelloLoop` 是一个面向 Codex 的独立插件，用来把“根据开发文档接续推进仓库开发”这件事标准化、可追踪、可验证地跑起来。
+`HelloLoop` 是一个面向 `Codex CLI`、`Claude Code`、`Gemini CLI` 的多宿主开发工作流插件，用来把“根据开发文档持续接续开发”变成一条可分析、可确认、可验证、可追踪的标准流程。
 
-它会先分析当前仓库真实代码与开发文档之间的差距，再把后续任务、运行状态、执行记录统一写入目标仓库根目录的 `.helloloop/`，让 Codex 能持续接着做，而不是每轮都重新交代背景。
+它有两层定位：
 
-命令入口按 `Node.js 20+` 设计，支持 Windows、macOS 和 Linux。
+- `Codex CLI`：首发平台、参考实现、最佳体验路径
+- `Claude Code` / `Gemini CLI`：各自按原生 agent 逻辑执行，但共享同一套 `.helloloop/` 工作流规范
+
+Codex 路径的主工作流只有两种 CLI 入口：
+
+```bash
+npx helloloop
+npx helloloop <PATH>
+```
+
+无论从哪个宿主进入，`HelloLoop` 都遵循同一条主线：
+
+1. 自动识别项目仓库与开发文档
+2. 分析当前代码与文档目标的真实差距
+3. 生成或刷新目标仓库根目录下的 `.helloloop/`
+4. 输出中文执行确认单
+5. 用户确认后，继续按当前宿主的原生 agent 逻辑推进开发、测试和验收
 
 ## 目录
 
-- [核心定位](#核心定位)
+- [核心流程](#核心流程)
+- [支持矩阵](#支持矩阵)
 - [安装](#安装)
 - [快速开始](#快速开始)
-- [路径规则](#路径规则)
-- [安全底线](#安全底线)
+- [自动发现规则](#自动发现规则)
+- [自动执行边界](#自动执行边界)
+- [Doctor 检查](#doctor-检查)
 - [命令速查](#命令速查)
 - [状态目录](#状态目录)
+- [Skill 用法](#skill-用法)
 - [在 Codex 中使用](#在-codex-中使用)
-- [许可证](#许可证)
+- [跨平台与安全](#跨平台与安全)
 - [仓库结构](#仓库结构)
-- [相关文档](#相关文档)
+- [许可证](#许可证)
 
-## 核心定位
+## 核心流程
 
-`HelloLoop` 适合这样的场景：
-
-- 仓库里已经有 `docs/`、方案包、任务文档或阶段说明
-- 代码已经做了一部分，需要先判断“现在做到哪里了”
-- 你希望自动生成足够细的后续 backlog，而不是得到一句“继续开发”
-- 你希望后续每轮执行都带着状态、约束、文档和验证命令继续推进
-- 你希望在开发文档约束不完整时，仍然有一层稳定、安全的执行底线
-
-围绕这个目标，`HelloLoop` 做四件事：
+`HelloLoop` 的默认流程固定为 5 步：
 
 1. 自动发现项目仓库与开发文档
-2. 对比当前代码和文档目标，判断真实进度
-3. 生成或刷新 `.helloloop/backlog.json`
-4. 驱动 Codex 按 backlog 接续执行并留下运行记录
+2. 对比文档目标与当前代码，识别当前进度和偏差
+3. 生成或刷新目标仓库根目录下的 `.helloloop/`
+4. 输出执行确认单，明确展示仓库、文档、当前进度、待办任务、验证命令和执行边界
+5. 用户确认后，自动推进后续开发、测试和验收，直到全部完成或遇到硬阻塞
 
-同时，`HelloLoop` 自带一层内建安全底线：
+如果分析识别出偏差修正任务，`HelloLoop` 会优先先收口偏差，再继续后面的开发任务。
 
-- 开发文档缺少必要约束时，自动补上默认工程约束
-- Windows 端优先使用 `pwsh`，也支持 `bash`（如 Git Bash）和 `powershell`，但不回退到 `cmd`
-- 所有流程都要求避免静默失败、危险命令和隐私信息泄露
+工作流统一，但执行器分为两类：
+
+- `Codex CLI`：通过 `npx helloloop` / `$helloloop` 进入，使用当前仓库内的 Node CLI 与 Codex 插件链路
+- `Claude Code` / `Gemini CLI`：通过 `/helloloop` 进入，使用各自原生插件 / 扩展与 agent 工具链
+
+## 支持矩阵
+
+| 宿主 | 安装方式 | 原生使用入口 | 当前定位 |
+| --- | --- | --- | --- |
+| `Codex CLI` | `helloloop install --host codex` | `$helloloop` / `npx helloloop` | 首发平台、参考实现、最佳体验 |
+| `Claude Code` | `helloloop install --host claude` | `/helloloop` | Claude 原生插件工作流 |
+| `Gemini CLI` | `helloloop install --host gemini` | `/helloloop` | Gemini 原生扩展工作流 |
+
+如果你希望一次性装好三家宿主：
+
+```bash
+npx helloloop install --host all
+```
 
 ## 安装
 
 ### npm / npx
 
-```powershell
+默认安装 `Codex` 宿主：
+
+```bash
 npx helloloop install --codex-home <CODEX_HOME>
+```
+
+安装到指定宿主：
+
+```bash
+npx helloloop install --host codex
+npx helloloop install --host claude
+npx helloloop install --host gemini
+npx helloloop install --host all
+```
+
+可选 home 参数：
+
+```bash
+--codex-home <CODEX_HOME>
+--claude-home <CLAUDE_HOME>
+--gemini-home <GEMINI_HOME>
 ```
 
 ### 源码仓库
 
-```powershell
+```bash
 node ./scripts/helloloop.mjs install --codex-home <CODEX_HOME>
 ```
 
-如果你在 Windows 上更习惯 PowerShell，也可以使用：
+Windows PowerShell 也可以直接运行：
 
 ```powershell
 pwsh -NoLogo -NoProfile -File .\scripts\install-home-plugin.ps1 -CodexHome <CODEX_HOME>
 ```
 
-安装完成后，插件会复制到 `<CODEX_HOME>/plugins/helloloop`，并更新 `<CODEX_HOME>/.agents/plugins/marketplace.json`。
+安装完成后：
+
+- Codex 会写入 `<CODEX_HOME>/plugins/helloloop`
+- Claude 会写入 `<CLAUDE_HOME>/marketplaces/helloloop-local`
+- Gemini 会写入 `<GEMINI_HOME>/extensions/helloloop`
+
+如果你想在安装后做一次全宿主环境检查：
+
+```bash
+npx helloloop doctor --host all
+```
 
 ## 快速开始
 
-### 1. 安装插件
+### 1. 选择宿主入口
 
-```powershell
-npx helloloop install --codex-home <CODEX_HOME>
+```text
+Codex   -> $helloloop / npx helloloop
+Claude  -> /helloloop
+Gemini  -> /helloloop
 ```
 
-### 2. 进入目标项目或开发文档目录
+说明：
 
-最短命令就是：
+- `Codex` 路径下，`$helloloop` 与 `npx helloloop` 对齐同一主流程
+- `Claude` 与 `Gemini` 路径下，`/helloloop` 会走各自原生 agent 执行逻辑
+- 三家都会维护同一个 `.helloloop/` 状态目录规范
 
-```powershell
+### 2. 进入项目仓库或开发文档目录
+
+最短命令：
+
+```bash
 npx helloloop
 ```
 
-默认规则如下：
+如果你只知道一个路径，也可以只传一个：
 
-- 当前目录是项目仓库根目录时：自动查找开发文档并分析当前进度
-- 当前目录本身是开发文档目录时：优先尝试反推目标仓库
-- 分析完成后：自动生成或刷新目标仓库根目录下的 `.helloloop/`
-
-如果你只知道一个路径，也可以只传一个位置：
-
-```powershell
+```bash
 npx helloloop <PATH>
 ```
 
-这里的 `<PATH>` 只能传一个，可以是：
+这里的 `<PATH>` 可以是：
 
 - 项目仓库路径
 - 开发文档目录
 - 开发文档文件
 
-### 3. 查看下一任务
+### 3. 查看执行确认单
 
-```powershell
-npx helloloop next
-```
+分析完成后，`HelloLoop` 会展示一份执行确认单，至少包含：
 
-### 4. 执行一次或连续执行
+- 识别出的目标仓库
+- 识别出的开发文档
+- 当前进度摘要
+- 已实现事项
+- 待完成事项
+- 任务统计
+- 首个待执行任务
+- 验证命令预览
+- 自动推进边界
 
-```powershell
-npx helloloop run-once
-npx helloloop run-loop --max-tasks 2
-```
+### 4. 确认后自动继续执行
+
+你确认后，`HelloLoop` 会：
+
+- 按 backlog 顺序自动推进
+- 每个任务都走当前宿主的原生 agent 执行与验证
+- 遇到失败、风险超阈值、依赖未满足或环境硬阻塞时立即停下
+- 把分析结果、状态和运行记录都写进目标仓库的 `.helloloop/`
 
 如果你已经做了全局安装，也可以把 `npx helloloop` 简写成 `helloloop`。
 
-## 路径规则
+如果你想手动查看或接管某一步，也可以使用：
+
+```bash
+npx helloloop status
+npx helloloop next
+npx helloloop run-once
+```
+
+## 自动发现规则
 
 - 不传路径：默认分析当前目录
 - 只传一个路径：自动判断它是仓库路径还是开发文档路径
-- 已给开发文档但无法确定仓库：停止并提示补充 `--repo`
-- 已给仓库但找不到开发文档：停止并提示补充 `--docs`
-- `--repo` 和 `--docs` 是高级覆盖选项，不是主工作流
+- 当前目录是仓库：自动查找开发文档
+- 当前目录是文档目录：自动尝试反推目标仓库
+- 只给开发文档但无法推断仓库：停止并提示补充 `--repo`
+- 只给仓库但找不到开发文档：停止并提示补充 `--docs`
 
-推荐优先使用：
+推荐始终优先使用：
 
-```powershell
+```bash
 npx helloloop
 npx helloloop <PATH>
 ```
 
-只有在自动发现无法收敛时，再显式补充：
+只有自动发现无法收敛时，再补充高级参数：
 
-```powershell
+```bash
 npx helloloop --repo <REPO_ROOT> --docs <DOCS_PATH>
 ```
 
-## 安全底线
+## 自动执行边界
 
-- `HelloLoop` 会始终附加一组内建安全底线，覆盖 shell 安全、EHRB 命令阻断、跨平台兼容和静默失败防护。
-- 如果项目开发文档或 `.helloloop/project.json` 已有明确约束，则优先使用项目约束；内建安全底线继续作为最低边界。
-- 如果项目没有给出必要约束，则自动启用默认工程约束，例如代码是事实源、体积控制、验证必须执行、阻塞必须明确说明。
-- Windows 环境下，`HelloLoop` 优先使用 `pwsh`，也支持 `bash`（如 Git Bash）和 `powershell`；如果这些安全 shell 都不可用，会直接停止，而不是回退到 `cmd.exe`。
-- macOS / Linux 环境下，`HelloLoop` 优先使用 `bash`，没有 `bash` 时再回退到 `sh`。
+默认主命令会在确认后尽量自动完成整轮 backlog，而不是只跑一个任务。
+
+### 常用执行模式
+
+```bash
+npx helloloop
+npx helloloop <PATH>
+npx helloloop --dry-run
+npx helloloop -y
+```
+
+含义如下：
+
+- `npx helloloop`：分析 → 展示确认单 → 等待你确认 → 自动执行
+- `npx helloloop <PATH>`：同上，但先用你给的单一路径做自动识别
+- `npx helloloop --dry-run`：只分析并输出确认单，不真正开始执行
+- `npx helloloop -y`：跳过交互确认，分析后直接自动执行
+
+### 停止条件
+
+出现以下情况时，`HelloLoop` 会停止并保留现场，而不是静默降级：
+
+- 无法自动确定目标仓库或开发文档
+- backlog 已存在失败任务、阻塞任务或未满足依赖
+- 后续任务风险超出自动阈值，且你没有显式加 `--allow-high-risk`
+- 验证命令失败
+- 当前宿主 CLI、插件资产或 shell 环境不可安全执行
+
+## Doctor 检查
+
+你可以用 `doctor` 检查当前宿主是否已具备基本运行条件。
+
+### 只检查 Codex
+
+```bash
+npx helloloop doctor
+```
+
+### 检查全部宿主
+
+```bash
+npx helloloop doctor --host all
+```
+
+### 检查已安装目录
+
+```bash
+npx helloloop doctor --host all --codex-home <CODEX_HOME> --claude-home <CLAUDE_HOME> --gemini-home <GEMINI_HOME>
+```
+
+`doctor` 当前可检查：
+
+- 宿主 CLI 是否存在
+- 本地运行时资产是否齐全
+- 目标仓库 `.helloloop/` 基础文件是否存在
+- 已安装宿主目录是否已写入对应插件 / 扩展
 
 ## 命令速查
 
 | 命令 | 作用 |
 | --- | --- |
-| `analyze` | 自动发现仓库与开发文档，分析进度并刷新 `.helloloop/` |
-| `next` | 预览下一任务，不真正执行 |
-| `run-once` | 执行一个任务 |
-| `run-loop` | 连续执行多个任务 |
+| `analyze` | 主工作流；分析并输出确认单，确认后自动接续执行 |
 | `status` | 查看 backlog 汇总与当前状态 |
-| `doctor` | 检查 Codex、插件 bundle 与目标仓库是否满足运行条件 |
+| `next` | 预览下一任务，不真正执行 |
+| `run-once` | 手动执行一个任务 |
+| `run-loop` | 手动连续执行多个任务 |
+| `doctor` | 检查所选宿主、运行时资产与目标仓库是否满足运行条件 |
 | `init` | 手动初始化 `.helloloop/` 模板 |
-| `install` | 安装插件到 Codex Home |
-
-除 `install` 外，其余命令都可以直接在目标仓库目录执行；如果不在目标仓库目录，也可以补一个路径：
-
-```powershell
-npx helloloop next <PATH>
-npx helloloop run-once <PATH>
-npx helloloop status <PATH>
-```
+| `install` | 安装插件到所选宿主目录 |
 
 ### 常用选项
 
 | 选项 | 说明 |
 | --- | --- |
+| `-y`, `--yes` | 跳过交互确认，分析后直接开始执行 |
+| `--dry-run` | 只分析并输出确认单，不真正开始执行 |
+| `--host <name>` | 选择安装宿主：`codex`、`claude`、`gemini`、`all` |
 | `--repo <dir>` | 高级选项：显式指定项目仓库根目录 |
 | `--docs <dir\|file>` | 高级选项：显式指定开发文档目录或文件 |
-| `--codex-home <dir>` | 指定 Codex Home |
-| `--config-dir <dir>` | 指定状态目录名，默认 `.helloloop` |
-| `--dry-run` | 只生成提示和预览，不真正调用 Codex |
-| `--task-id <id>` | 指定执行某个任务 |
-| `--max-tasks <n>` | `run-loop` 最多执行的任务数 |
-| `--max-attempts <n>` | 每种策略的最大重试次数 |
-| `--max-strategies <n>` | 单任务最大换路次数 |
 | `--allow-high-risk` | 允许执行 `medium` 及以上风险任务 |
+| `--max-tasks <n>` | 限制手动 `run-loop` 的最大任务数 |
+| `--max-attempts <n>` | 单策略最大重试次数 |
+| `--max-strategies <n>` | 单任务最大换路次数 |
 | `--required-doc <path>` | 追加全局必读文档 |
 | `--constraint <text>` | 追加全局实现约束 |
+| `--codex-home <dir>` | 指定 Codex Home |
+| `--claude-home <dir>` | 指定 Claude Home |
+| `--gemini-home <dir>` | 指定 Gemini Home |
+| `--config-dir <dir>` | 指定状态目录名，默认 `.helloloop` |
 | `--force` | 覆盖已有安装目录 |
-
-### Skill 名称
-
-安装为 Codex 插件后，推荐显式使用：
-
-```text
-helloloop:helloloop
-```
 
 ## 状态目录
 
-`HelloLoop` 默认在目标仓库根目录创建 `.helloloop/`，而不是写回插件目录自身。
+`HelloLoop` 始终把运行状态写入目标仓库根目录，而不是插件目录自身。
 
-典型结构如下：
+默认目录：
 
 ```text
 .helloloop/
@@ -206,49 +321,120 @@ helloloop:helloloop
 └── runs/
 ```
 
-各文件职责如下：
+其中：
 
-- `backlog.json`：接续开发任务列表
-- `policy.json`：循环上限、重试策略和 Codex 参数
+- `backlog.json`：分析后生成的任务队列
+- `policy.json`：自动推进策略、重试上限和 Codex 参数
 - `project.json`：开发文档入口和全局约束
-- `status.json`：最近一次运行的机器可读状态
-- `STATE.md`：面向人的当前进展摘要
-- `runs/`：提示词、stdout、stderr、验证输出等运行留痕
+- `status.json`：最近一次运行状态
+- `STATE.md`：面向人的进度摘要
+- `runs/`：提示词、stdout、stderr、验证日志等留痕
+
+## Skill 用法
+
+如果你已经把 `HelloLoop` 安装成 Codex 插件，也可以直接在 Codex 里调用：
+
+```text
+$helloloop
+```
+
+或：
+
+```text
+helloloop:helloloop
+```
+
+此时推荐理解为：
+
+- `$helloloop` 是插件入口
+- `npx helloloop` / `npx helloloop <PATH>` 是实际执行入口
+
+也就是说，用户显式调用 `$helloloop` 时，目标行为应当与主命令保持一致：
+
+1. 先自动识别仓库和开发文档
+2. 再分析当前代码与文档目标
+3. 再展示执行确认单
+4. 最后在你确认后自动接续执行
+
+如果当前目录无法判断目标仓库、缺少开发文档，或者你明确只想先讲解不执行，`HelloLoop` 才应该先停下来问你，而不是直接启动执行。
+
+如果你安装的是 Claude 或 Gemini 宿主，则推荐直接使用：
+
+```text
+/helloloop
+```
+
+它们会按各自 CLI 的原生 agent 逻辑执行，但共享同一套 `.helloloop/` 工作流规范。
 
 ## 在 Codex 中使用
 
-可以。
+可以直接在当前 Codex 会话里运行：
 
-- 在当前 Codex 会话里，直接运行 `npx helloloop ...` 即可，不需要重开终端
-- 如果你使用的是全局安装后的 `helloloop` 短命令，是否需要新终端取决于你的 shell 是否已经刷新 PATH
-- `HelloLoop` 负责组织分析、backlog 和执行流程，真正的代码分析与开发仍然通过本机 `codex` CLI 完成
+```bash
+npx helloloop
+```
 
-## 许可证
+不需要重开终端。
 
-`HelloLoop` 使用 `Apache-2.0` 许可证，许可证文件位于仓库根目录 `LICENSE`。
+如果你使用的是全局安装后的 `helloloop` 短命令，是否立刻可用取决于当前 shell 是否已经刷新 PATH。
+
+安装为 Codex 插件后，推荐显式使用的 skill 名称是：
+
+```text
+helloloop:helloloop
+```
+
+## 跨平台与安全
+
+`HelloLoop` 默认兼容 Windows、macOS 和 Linux。
+
+### shell 策略
+
+- Windows：`pwsh` → `bash`（如 Git Bash）→ `powershell`
+- macOS / Linux：`bash` → `sh`
+- Windows 不会回退到 `cmd.exe`
+
+说明：
+
+- `Codex` 路径由当前 Node CLI 严格控制 shell 选择
+- `Claude` / `Gemini` 路径走各自原生插件 / 扩展，但仍应遵守 `HelloLoop` 的安全约束
+
+### 内建兜底规则
+
+当开发文档没有给出足够约束时，`HelloLoop` 会自动附加一层最低安全边界，包括但不限于：
+
+- 代码是事实源
+- 验证必须执行
+- 不能静默失败
+- 不能吞掉错误
+- 危险命令必须阻断
+- 路径与 shell 调用必须按跨平台安全方式执行
 
 ## 仓库结构
 
 ```text
 helloloop/
-├── .codex-plugin/         # Codex 插件 manifest 与展示元数据
-├── bin/                   # npm 命令入口
-├── docs/                  # 补充说明文档
-├── scripts/               # 安装脚本与 CLI 入口
-├── skills/                # 插件技能
-├── src/                   # 核心实现
-├── templates/             # 初始化时写入 .helloloop/ 的模板
-└── tests/                 # 回归测试
+├── .claude-plugin/
+├── .codex-plugin/
+├── bin/
+├── docs/
+├── hosts/
+├── scripts/
+├── skills/
+├── src/
+├── templates/
+└── tests/
 ```
 
 其中：
 
-- `src/` 放 `HelloLoop` 的实际实现逻辑，例如路径发现、分析提示词生成、运行调度和安装流程
-- `tests/` 放回归测试，确保 CLI、安装链路、bundle 结构和分析流程没有被改坏
-- `templates/` 是初始化目标仓库时写入 `.helloloop/` 的模板来源
+- `.claude-plugin/`：Claude plugin 元数据
+- `.codex-plugin/`：Codex plugin 元数据
+- `hosts/`：Claude marketplace/plugin 与 Gemini extension 的运行时资产
+- `src/`：核心实现，例如路径发现、分析提示词、任务调度、执行与安装
+- `tests/`：回归测试，覆盖 CLI、安装链路、bundle 结构和关键流程
+- `templates/`：初始化目标仓库 `.helloloop/` 时写入的模板
 
-## 相关文档
+## 许可证
 
-- `docs/install.md`：安装与日常使用方式
-- `docs/README.md`：插件 bundle 结构说明
-- `docs/plugin-standard.md`：官方插件结构与当前实现映射
+`HelloLoop` 使用 `Apache-2.0`，许可证文件位于仓库根目录 `LICENSE`。

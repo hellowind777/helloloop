@@ -1,8 +1,8 @@
 {
   "name": "helloloop",
-  "version": "0.1.2",
-  "description": "面向 Codex 的独立插件 bundle，用于基于 backlog 持续推进仓库开发并执行验证循环",
-  "author": "HelloWind",
+  "version": "0.2.0",
+  "description": "面向 Codex CLI、Claude Code、Gemini CLI 的多宿主开发工作流插件",
+  "author": "HelloLoop",
   "license": "Apache-2.0",
   "homepage": "https://github.com/hellowind777/helloloop",
   "type": "module",
@@ -17,10 +17,12 @@
     "helloloop": "bin/helloloop.js"
   },
   "files": [
+    ".claude-plugin",
     ".codex-plugin",
     "LICENSE",
     "README.md",
     "bin",
+    "hosts",
     "package.json",
     "scripts",
     "skills",

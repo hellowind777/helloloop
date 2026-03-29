@@ -125,7 +125,7 @@ function isCmdLikeExecutable(executable) {
   return /\.(cmd|bat)$/i.test(String(executable || ""));
 }
 
-function resolveWindowsCodexExecutable(options = {}) {
+function resolveWindowsNamedExecutable(toolName, options = {}) {
   const explicitExecutable = String(options.explicitExecutable || "").trim();
   const findCommandPaths = options.findCommandPaths || ((command) => findWindowsCommandPaths(command));
 
@@ -133,7 +133,7 @@ function resolveWindowsCodexExecutable(options = {}) {
     return explicitExecutable;
   }
 
-  const searchOrder = ["codex.ps1", "codex.exe", "codex"];
+  const searchOrder = [`${toolName}.ps1`, `${toolName}.exe`, toolName];
   for (const query of searchOrder) {
     const safeMatch = findCommandPaths(query).find((candidate) => !isCmdLikeExecutable(candidate));
     if (safeMatch) {
@@ -160,31 +160,37 @@ export function resolveVerifyShellInvocation(options = {}) {
   return resolvePosixCommandShell(options);
 }
 
-export function resolveCodexInvocation(options = {}) {
+export function resolveCliInvocation(options = {}) {
   const platform = options.platform || process.platform;
   const explicitExecutable = String(options.explicitExecutable || "").trim();
+  const commandName = String(options.commandName || "").trim();
+  const toolDisplayName = String(options.toolDisplayName || commandName || "CLI");
+
+  if (!commandName && !explicitExecutable) {
+    return createUnavailableInvocation("未提供 CLI 名称或显式可执行路径。");
+  }
 
   if (platform !== "win32") {
     return {
-      command: explicitExecutable || "codex",
+      command: explicitExecutable || commandName,
       argsPrefix: [],
       shell: false,
     };
   }
 
-  const executable = resolveWindowsCodexExecutable({
+  const executable = resolveWindowsNamedExecutable(commandName, {
     explicitExecutable,
     findCommandPaths: options.findCommandPaths,
   });
   if (!executable) {
     return createUnavailableInvocation(
-      "未找到可安全执行的 codex 入口。Windows 环境需要 codex.ps1、codex.exe 或其他非 cmd 的可执行入口。",
+      `未找到可安全执行的 ${toolDisplayName} 入口。Windows 环境需要 ${commandName}.ps1、${commandName}.exe 或其他非 cmd 的可执行入口。`,
     );
   }
 
   if (isCmdLikeExecutable(executable)) {
     return createUnavailableInvocation(
-      `HelloLoop 在 Windows 已禁止通过 cmd/bat 启动 Codex：${executable}`,
+      `HelloLoop 在 Windows 已禁止通过 cmd/bat 启动 ${toolDisplayName}：${executable}`,
     );
   }
 
@@ -208,4 +214,12 @@ export function resolveCodexInvocation(options = {}) {
     argsPrefix: [],
     shell: false,
   };
+}
+
+export function resolveCodexInvocation(options = {}) {
+  return resolveCliInvocation({
+    ...options,
+    commandName: "codex",
+    toolDisplayName: "Codex",
+  });
 }

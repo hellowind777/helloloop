@@ -1,0 +1,13 @@
+{
+  "name": "helloloop",
+  "version": "0.2.0",
+  "description": "HelloLoop 的 Gemini CLI 原生扩展，用于按开发文档接续推进项目开发。",
+  "contextFileName": "GEMINI.md",
+  "excludeTools": [
+    "run_shell_command(rm -rf)",
+    "run_shell_command(git reset --hard)",
+    "run_shell_command(git push --force)",
+    "run_shell_command(FLUSHALL)",
+    "run_shell_command(FLUSHDB)"
+  ]
+}

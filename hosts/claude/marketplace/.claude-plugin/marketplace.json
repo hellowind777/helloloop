@@ -1,0 +1,14 @@
+{
+  "name": "helloloop-local",
+  "owner": {
+    "name": "HelloLoop"
+  },
+  "plugins": [
+    {
+      "name": "helloloop",
+      "displayName": "HelloLoop",
+      "description": "基于开发文档分析当前进度、展示确认单，并在确认后继续接续开发的 Claude Code 原生插件。",
+      "source": "./plugins/helloloop"
+    }
+  ]
+}

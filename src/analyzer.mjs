@@ -87,8 +87,8 @@ function buildAnalysisSummaryText(context, analysis, backlog) {
     nextTask ? `下一任务：${nextTask.title}` : "下一任务：暂无可执行任务",
     "",
     "下一步建议：",
-    `- npx helloloop next`,
-    `- npx helloloop run-once`,
+    `- npx helloloop`,
+    `- npx helloloop --dry-run`,
   ].join("\n");
 }
 

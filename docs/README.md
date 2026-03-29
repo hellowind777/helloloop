@@ -1,6 +1,10 @@
 # HelloLoop Bundle 说明
 
-`HelloLoop` 以独立 Codex 插件 bundle 交付，当前目录本身就是插件根目录。
+`HelloLoop` 以多宿主 bundle 交付，当前目录同时包含：
+
+- `Codex` 官方插件资产
+- `Claude Code` marketplace / plugin 资产
+- `Gemini CLI` extension 资产
 
 ## 目录结构
 
@@ -19,10 +23,12 @@ helloloop/
 其中：
 
 - `.codex-plugin/`：插件 manifest 和展示元数据
+- `.claude-plugin/`：Claude plugin 元数据
 - `bin/`：npm 命令入口
-- `scripts/`：源码仓库下的脚本入口
+- `hosts/`：Claude / Gemini 宿主运行时资产
+- `scripts/`：源码仓库下的 CLI 与安装脚本
 - `skills/`：插件技能
-- `src/`：路径发现、分析、调度、安装等核心实现
+- `src/`：路径发现、分析、调度、执行、安装等核心实现
 - `templates/`：写入目标仓库 `.helloloop/` 的模板
 - `tests/`：回归测试
 - `docs/`：源码仓库补充文档
@@ -31,14 +37,16 @@ helloloop/
 
 安装后的运行时 bundle 只带以下内容：
 
+- `.claude-plugin/`
 - `.codex-plugin/`
 - `LICENSE`
+- `README.md`
 - `bin/`
+ - `hosts/`
 - `scripts/`
 - `skills/`
 - `src/`
 - `templates/`
-- `README.md`
 
 `docs/` 和 `tests/` 用于源码仓库维护，不属于运行时必需文件。
 
@@ -46,26 +54,35 @@ helloloop/
 
 ### npm / npx
 
-```powershell
+```bash
 npx helloloop install --codex-home <CODEX_HOME>
 npx helloloop
-npx helloloop next
-npx helloloop run-loop --max-tasks 2
+npx helloloop <PATH>
+npx helloloop --dry-run
 ```
+
+主命令会自动：
+
+1. 识别项目仓库和开发文档
+2. 分析当前进度与偏差
+3. 输出执行确认单
+4. 经用户确认后继续自动接续执行
 
 ### 源码仓库调试
 
-```powershell
+```bash
 node ./scripts/helloloop.mjs
-node ./scripts/helloloop.mjs next
-node ./scripts/helloloop.mjs run-loop --max-tasks 2
+node ./scripts/helloloop.mjs <PATH>
+node ./scripts/helloloop.mjs --dry-run
 ```
 
-如果你不在目标仓库目录，也可以补一个路径：
+### 手动控制命令
 
-```powershell
-npx helloloop <PATH>
-npx helloloop next <PATH>
+```bash
+npx helloloop status
+npx helloloop next
+npx helloloop run-once
+npx helloloop run-loop --max-tasks 2
 ```
 
 ## `.helloloop/` 目录
@@ -93,11 +110,11 @@ helloloop:helloloop
 
 本仓库的快速回归入口：
 
-```powershell
+```bash
 npm test
 ```
 
-它覆盖安装链路、CLI 表面、bundle 结构和分析链路的关键回归。
+它覆盖安装链路、CLI 表面、bundle 结构和分析流程的关键回归。
 
 ## 许可证
 
