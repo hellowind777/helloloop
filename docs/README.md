@@ -66,7 +66,7 @@ node .\scripts\helloloop.mjs run-loop --repo D:\GitHub\dev\your-repo
 
 ## 状态目录
 
-### `.helloagents/helloloop/`
+### `.helloloop/`
 
 CLI/backlog 执行目录，保存：
 

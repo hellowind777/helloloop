@@ -1,5 +1,5 @@
 ## 当前状态
-- backlog 文件：.helloagents/helloloop/backlog.json
+- backlog 文件：.helloloop/backlog.json
 - 总任务数：1
 - 已完成：0
 - 待处理：1

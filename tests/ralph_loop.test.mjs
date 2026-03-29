@@ -39,3 +39,20 @@ test("纯插件模式仍保留 Ralph Loop 默认参数与干跑提示", async ()
   assert.match(result.prompt, /当前策略内重试：1\/3/);
   assert.match(result.prompt, /完成前必须运行的验证/);
 });
+
+test("默认状态目录改为 .helloloop，并兼容识别旧的 .helloagents/helloloop", () => {
+  const defaultRepoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-default-config-"));
+  const legacyRepoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-legacy-config-"));
+
+  try {
+    const defaultContext = createContext({ repoRoot: defaultRepoRoot });
+    assert.equal(defaultContext.configRoot, path.join(defaultRepoRoot, ".helloloop"));
+
+    writeText(path.join(legacyRepoRoot, ".helloagents", "helloloop", "backlog.json"), "{\n  \"tasks\": []\n}\n");
+    const legacyContext = createContext({ repoRoot: legacyRepoRoot });
+    assert.equal(legacyContext.configRoot, path.join(legacyRepoRoot, ".helloagents", "helloloop"));
+  } finally {
+    fs.rmSync(defaultRepoRoot, { recursive: true, force: true });
+    fs.rmSync(legacyRepoRoot, { recursive: true, force: true });
+  }
+});

@@ -113,7 +113,7 @@ Hook 当前仍然不走插件 manifest。
 
 - `helloloop:helloloop` skill 入口
 - `scripts/helloloop.mjs` CLI 入口
-- `.helloagents/helloloop/` 下的 backlog / policy / project / status 状态目录
+- `.helloloop/` 下的 backlog / policy / project / status 状态目录
 - Ralph Loop 的多轮重试与换路策略
 
 ## 纯官方插件模式下主动放弃的能力

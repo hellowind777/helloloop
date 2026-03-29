@@ -44,7 +44,7 @@ test("官方插件入口 help 不再暴露 install-hooks 或 Hook 模式", () =>
   assert.match(result.stdout, /doctor/);
   assert.doesNotMatch(result.stdout, /install-hooks/);
   assert.doesNotMatch(result.stdout, /Hook 模式/);
-  assert.doesNotMatch(result.stdout, /\.helloloop/);
+  assert.doesNotMatch(result.stdout, /\.autoloop/);
 });
 
 test("npm bin 入口支持 install 命令，把插件安装到指定 Codex Home", () => {
@@ -67,26 +67,26 @@ test("npm bin 入口支持 install 命令，把插件安装到指定 Codex Home"
   }
 });
 
-test("doctor 只检查纯插件模式前提，不再要求 hooks.json 或 .helloloop\\/project.json", () => {
+test("doctor 只检查纯插件模式前提，不再要求 hooks.json 或 .autoloop\\/project.json", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-cli-surface-"));
   const fakeBin = path.join(tempRoot, "bin");
   const tempRepo = path.join(tempRoot, "repo");
 
   createFakeCodex(fakeBin);
-  writeJson(path.join(tempRepo, ".helloagents", "helloloop", "backlog.json"), {
+  writeJson(path.join(tempRepo, ".helloloop", "backlog.json"), {
     version: 1,
     project: "test-project",
     updatedAt: "2026-03-28T00:00:00.000Z",
     tasks: [],
   });
-  writeJson(path.join(tempRepo, ".helloagents", "helloloop", "policy.json"), {
+  writeJson(path.join(tempRepo, ".helloloop", "policy.json"), {
     version: 1,
     maxLoopTasks: 4,
     maxTaskAttempts: 2,
     maxTaskStrategies: 4,
     stopOnFailure: false,
   });
-  writeJson(path.join(tempRepo, ".helloagents", "helloloop", "project.json"), {
+  writeJson(path.join(tempRepo, ".helloloop", "project.json"), {
     requiredDocs: [],
     constraints: [],
   });
@@ -109,5 +109,5 @@ test("doctor 只检查纯插件模式前提，不再要求 hooks.json 或 .hello
   assert.match(result.stdout, /OK  plugin manifest/);
   assert.match(result.stdout, /OK  plugin skill/);
   assert.doesNotMatch(result.stdout, /hooks\.json/);
-  assert.doesNotMatch(result.stdout, /\.helloloop[\\\/]project\.json/);
+  assert.doesNotMatch(result.stdout, /\.autoloop[\\\/]project\.json/);
 });

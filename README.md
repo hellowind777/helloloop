@@ -2,7 +2,7 @@
 
 `HelloLoop` 是一个面向 Codex 的 backlog 驱动开发插件。
 
-它把持续开发所需的任务队列、执行策略、验证命令和运行记录集中到目标仓库的 `.helloagents/helloloop/` 目录里，并通过显式 CLI / skill 入口推动任务逐步落地。
+它把持续开发所需的任务队列、执行策略、验证命令和运行记录集中到目标仓库的 `.helloloop/` 目录里，并通过显式 CLI / skill 入口推动任务逐步落地。
 
 ## 目录
 
@@ -37,7 +37,7 @@
 ## 核心能力
 
 - **插件安装**：把运行时 bundle 安装到 `~/.codex/plugins/helloloop`
-- **仓库初始化**：为目标仓库生成 `.helloagents/helloloop/` 初始状态文件
+- **仓库初始化**：为目标仓库生成 `.helloloop/` 初始状态文件
 - **任务选择**：基于优先级、依赖和风险等级选择下一任务
 - **干跑预览**：先生成下一任务提示词和验证列表，再决定是否执行
 - **单轮执行**：执行一个任务并回写状态
@@ -136,7 +136,7 @@ node C:\Users\hellowind\.codex\plugins\helloloop\scripts\helloloop.mjs run-loop 
 | 命令 | 作用 |
 | --- | --- |
 | `install` | 安装插件到 Codex Home，并更新 marketplace |
-| `init` | 初始化目标仓库 `.helloagents/helloloop/` |
+| `init` | 初始化目标仓库 `.helloloop/` |
 | `doctor` | 检查 Codex CLI、模板、配置文件和插件文件是否齐备 |
 | `status` | 查看 backlog 汇总与下一任务 |
 | `next` | 干跑生成下一任务预览，不真正调用 Codex |
@@ -149,7 +149,7 @@ node C:\Users\hellowind\.codex\plugins\helloloop\scripts\helloloop.mjs run-loop 
 | --- | --- |
 | `--repo <dir>` | 目标仓库根目录 |
 | `--codex-home <dir>` | 指定 Codex Home |
-| `--config-dir <dir>` | 自定义状态目录，默认 `.helloagents/helloloop` |
+| `--config-dir <dir>` | 自定义状态目录，默认 `.helloloop` |
 | `--dry-run` | 只生成提示词和预览，不真正调用 Codex |
 | `--task-id <id>` | 指定执行某个任务 |
 | `--max-tasks <n>` | `run-loop` 最多执行多少个任务 |
@@ -170,12 +170,12 @@ helloloop:helloloop
 
 ## 状态目录
 
-`HelloLoop` 在目标仓库内使用 `.helloagents/helloloop/` 保存执行状态。
+`HelloLoop` 在目标仓库内默认使用 `.helloloop/` 保存执行状态。
 
 典型结构如下：
 
 ```text
-.helloagents/helloloop/
+.helloloop/
 ├── backlog.json
 ├── policy.json
 ├── project.json
@@ -192,6 +192,8 @@ helloloop:helloloop
 - `status.json`：机器可读的最近运行状态
 - `STATE.md`：给人看的当前状态摘要
 - `runs/`：每次任务执行的提示词、stdout、stderr 和验证记录
+
+如果旧仓库仍保留 `.helloagents/helloloop/`，当前版本也会自动识别；你也可以显式传 `--config-dir .helloagents/helloloop`。
 
 ## 任务与执行模型
 

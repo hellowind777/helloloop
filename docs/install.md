@@ -102,7 +102,7 @@ node C:\Users\hellowind\.codex\plugins\helloloop\scripts\helloloop.mjs run-loop 
 `HelloLoop` 的 backlog 状态目录始终写入目标仓库的：
 
 ```text
-.helloagents/helloloop/
+.helloloop/
 ```
 
 而不是写回插件目录自身。
