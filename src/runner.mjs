@@ -1,6 +1,13 @@
 import path from "node:path";
 
 import {
+  classifySwitchableEngineFailure,
+  promptEngineFallbackAfterFailure,
+  rememberEngineSelection,
+  resolveEngineSelection,
+} from "./engine_selection.mjs";
+import { getEngineDisplayName } from "./engine_metadata.mjs";
+import {
   ensureDir,
   nowIso,
   sanitizeId,
@@ -18,6 +25,7 @@ import {
   writeStateMarkdown,
   writeStatus,
 } from "./config.mjs";
+import { reviewTaskCompletion } from "./completion_review.mjs";
 import {
   getTask,
   renderTaskSummary,
@@ -26,8 +34,9 @@ import {
   unresolvedDependencies,
   updateTask,
 } from "./backlog.mjs";
+import { reanalyzeCurrentWorkspace } from "./analyzer.mjs";
 import { buildTaskPrompt } from "./prompt.mjs";
-import { runCodexExec, runVerifyCommands } from "./process.mjs";
+import { runEngineExec, runVerifyCommands } from "./process.mjs";
 
 function makeRunDir(context, taskId) {
   return path.join(context.runsDir, `${timestampForFile()}-${sanitizeId(taskId)}`);
@@ -46,7 +55,7 @@ function isHardStopFailure(kind, summary) {
     return false;
   }
 
-  if (kind === "codex" && normalized.includes("enoent")) {
+  if (kind === "engine" && normalized.includes("enoent")) {
     return true;
   }
 
@@ -101,9 +110,10 @@ function resolveTask(backlog, options) {
 }
 
 function buildFailureSummary(kind, payload) {
-  if (kind === "codex") {
+  if (kind === "engine") {
+    const displayName = getEngineDisplayName(payload.engine);
     return [
-      `Codex 执行失败，退出码：${payload.code}`,
+      `${displayName} 执行失败，退出码：${payload.code}`,
       "",
       "stdout 尾部：",
       tailText(payload.stdout, 60),
@@ -154,6 +164,26 @@ async function executeSingleTask(context, options = {}) {
   const maxAttemptsPerStrategy = Math.max(1, Number(options.maxAttempts || policy.maxTaskAttempts || 1));
   const configuredStrategies = Math.max(1, Number(options.maxStrategies || policy.maxTaskStrategies || 1));
   const maxStrategies = policy.stopOnFailure ? 1 : configuredStrategies;
+  let engineResolution = options.engineResolution?.ok
+    ? options.engineResolution
+    : await resolveEngineSelection({
+      context,
+      policy,
+      options,
+      interactive: !options.yes,
+    });
+
+  if (!engineResolution.ok) {
+    return {
+      ok: false,
+      kind: "engine-selection-failed",
+      task,
+      summary: engineResolution.message,
+      engineResolution,
+    };
+  }
+
+  rememberEngineSelection(context, engineResolution, options);
 
   if (options.dryRun) {
     const prompt = buildTaskPrompt({
@@ -168,8 +198,8 @@ async function executeSingleTask(context, options = {}) {
       maxAttemptsPerStrategy,
     });
     ensureDir(runDir);
-    writeText(path.join(runDir, "codex-prompt.md"), prompt);
-    return { ok: true, kind: "dry-run", task, runDir, prompt, verifyCommands };
+    writeText(path.join(runDir, `${engineResolution.engine}-prompt.md`), prompt);
+    return { ok: true, kind: "dry-run", task, runDir, prompt, verifyCommands, engineResolution };
   }
 
   updateTask(backlog, task.id, { status: "in_progress", startedAt: nowIso() });
@@ -194,17 +224,52 @@ async function executeSingleTask(context, options = {}) {
         maxAttemptsPerStrategy,
       });
       const attemptDir = makeAttemptDir(runDir, strategyIndex, attemptIndex);
-      const codexResult = await runCodexExec({ context, prompt, runDir: attemptDir, policy });
+      const engineResult = await runEngineExec({
+        engine: engineResolution.engine,
+        context,
+        prompt,
+        runDir: attemptDir,
+        policy,
+      });
 
-      if (!codexResult.ok) {
-        previousFailure = buildFailureSummary("codex", codexResult);
+      if (!engineResult.ok) {
+        previousFailure = buildFailureSummary("engine", {
+          ...engineResult,
+          engine: engineResolution.engine,
+        });
         failureHistory.push({
           strategyIndex,
           attemptIndex,
-          kind: "codex",
+          kind: engineResolution.engine,
           summary: previousFailure,
         });
-        if (isHardStopFailure("codex", previousFailure)) {
+        const switchableFailure = classifySwitchableEngineFailure(previousFailure);
+        if (switchableFailure && !options.yes) {
+          const fallback = await promptEngineFallbackAfterFailure({
+            failedEngine: engineResolution.engine,
+            hostContext: engineResolution.hostContext,
+            probes: engineResolution.probes,
+            failureSummary: switchableFailure.reason,
+          });
+          if (fallback.ok) {
+            engineResolution = {
+              ...engineResolution,
+              engine: fallback.engine,
+              displayName: getEngineDisplayName(fallback.engine),
+              source: "interactive_fallback",
+              sourceLabel: "故障后交互切换",
+              basis: [
+                `${getEngineDisplayName(engineResolution.engine)} 执行阶段失败。`,
+                switchableFailure.reason,
+                `用户改为选择 ${getEngineDisplayName(fallback.engine)}。`,
+              ],
+            };
+            rememberEngineSelection(context, engineResolution, options);
+            continue;
+          }
+        }
+
+        if (isHardStopFailure("engine", previousFailure)) {
           updateTask(backlog, task.id, {
             status: "failed",
             finishedAt: nowIso(),
@@ -212,13 +277,118 @@ async function executeSingleTask(context, options = {}) {
             attempts: failureHistory.length,
           });
           saveBacklog(context, backlog);
-          return { ok: false, kind: "codex-failed", task, runDir, summary: previousFailure };
+          return {
+            ok: false,
+            kind: "engine-failed",
+            task,
+            runDir,
+            summary: previousFailure,
+            engineResolution,
+          };
         }
         continue;
       }
 
       const verifyResult = await runVerifyCommands(context, verifyCommands, attemptDir);
       if (verifyResult.ok) {
+        const reviewResult = await reviewTaskCompletion({
+          engine: engineResolution.engine,
+          context,
+          task,
+          requiredDocs,
+          constraints,
+          repoStateText,
+          engineFinalMessage: engineResult.finalMessage,
+          verifyResult,
+          runDir: attemptDir,
+          policy,
+        });
+
+        if (!reviewResult.ok) {
+          previousFailure = reviewResult.summary;
+          failureHistory.push({
+            strategyIndex,
+            attemptIndex,
+            kind: "task_review",
+            summary: previousFailure,
+          });
+          const switchableFailure = classifySwitchableEngineFailure(previousFailure);
+          if (switchableFailure && !options.yes) {
+            const fallback = await promptEngineFallbackAfterFailure({
+              failedEngine: engineResolution.engine,
+              hostContext: engineResolution.hostContext,
+              probes: engineResolution.probes,
+              failureSummary: switchableFailure.reason,
+            });
+            if (fallback.ok) {
+              engineResolution = {
+                ...engineResolution,
+                engine: fallback.engine,
+                displayName: getEngineDisplayName(fallback.engine),
+                source: "interactive_fallback",
+                sourceLabel: "故障后交互切换",
+                basis: [
+                  `${getEngineDisplayName(engineResolution.engine)} 任务复核阶段失败。`,
+                  switchableFailure.reason,
+                  `用户改为选择 ${getEngineDisplayName(fallback.engine)}。`,
+                ],
+              };
+              rememberEngineSelection(context, engineResolution, options);
+              continue;
+            }
+          }
+
+          if (isHardStopFailure("review", previousFailure)) {
+            updateTask(backlog, task.id, {
+              status: "failed",
+              finishedAt: nowIso(),
+              lastFailure: previousFailure,
+              attempts: failureHistory.length,
+            });
+            saveBacklog(context, backlog);
+            return {
+              ok: false,
+              kind: "task-review-failed",
+              task,
+              runDir,
+              summary: previousFailure,
+              engineResolution,
+            };
+          }
+
+          continue;
+        }
+
+        if (!reviewResult.review.isComplete) {
+          previousFailure = reviewResult.summary;
+          failureHistory.push({
+            strategyIndex,
+            attemptIndex,
+            kind: reviewResult.review.verdict === "blocked" ? "blocked" : "task_incomplete",
+            summary: previousFailure,
+          });
+
+          if (reviewResult.review.verdict === "blocked") {
+            updateTask(backlog, task.id, {
+              status: "blocked",
+              finishedAt: nowIso(),
+              lastFailure: previousFailure,
+              attempts: failureHistory.length,
+            });
+            saveBacklog(context, backlog);
+            return {
+              ok: false,
+              kind: "task-blocked",
+              task,
+              runDir,
+              summary: previousFailure,
+              engineResolution,
+            };
+          }
+
+          continue;
+        }
+
         updateTask(backlog, task.id, {
           status: "done",
           finishedAt: nowIso(),
@@ -231,7 +401,8 @@ async function executeSingleTask(context, options = {}) {
           kind: "done",
           task,
           runDir,
-          finalMessage: codexResult.finalMessage,
+          finalMessage: engineResult.finalMessage,
+          engineResolution,
         };
       }
 
@@ -250,7 +421,14 @@ async function executeSingleTask(context, options = {}) {
           attempts: failureHistory.length,
         });
         saveBacklog(context, backlog);
-        return { ok: false, kind: "verify-failed", task, runDir, summary: previousFailure };
+        return {
+          ok: false,
+          kind: "verify-failed",
+          task,
+          runDir,
+          summary: previousFailure,
+          engineResolution,
+        };
       }
     }
 
@@ -273,7 +451,14 @@ async function executeSingleTask(context, options = {}) {
     attempts: failureHistory.length,
   });
   saveBacklog(context, backlog);
-  return { ok: false, kind: "strategy-exhausted", task, runDir, summary: exhaustedSummary };
+  return {
+    ok: false,
+    kind: "strategy-exhausted",
+    task,
+    runDir,
+    summary: exhaustedSummary,
+    engineResolution,
+  };
 }
 
 export async function runOnce(context, options = {}) {
@@ -303,16 +488,93 @@ export async function runOnce(context, options = {}) {
 
 export async function runLoop(context, options = {}) {
   const policy = loadPolicy(context);
-  const maxTasks = Math.max(1, Number(options.maxTasks || policy.maxLoopTasks || 1));
+  const explicitMaxTasks = Number(options.maxTasks);
+  const fullAutoMainline = Boolean(options.fullAutoMainline);
+  const maxTasks = Number.isFinite(explicitMaxTasks) && explicitMaxTasks > 0
+    ? explicitMaxTasks
+    : (fullAutoMainline ? Number.POSITIVE_INFINITY : Math.max(1, Number(policy.maxLoopTasks || 1)));
+  const maxReanalysisPasses = Math.max(0, Number(options.maxReanalysisPasses || policy.maxReanalysisPasses || 0));
   const results = [];
+  let engineResolution = options.engineResolution || null;
+  let completedTasks = 0;
+  let reanalysisPasses = 0;
 
-  for (let index = 0; index < maxTasks; index += 1) {
-    const result = await runOnce(context, options);
+  while (completedTasks < maxTasks) {
+    const result = await runOnce(context, {
+      ...options,
+      engineResolution,
+    });
     results.push(result);
+    if (result.engineResolution?.ok) {
+      engineResolution = result.engineResolution;
+    }
     if (options.dryRun) break;
     if (!result.ok || !result.task) break;
+    completedTasks += 1;
     const backlog = loadBacklog(context);
-    if (!selectNextTask(backlog, options)) break;
+    if (selectNextTask(backlog, options)) {
+      continue;
+    }
+
+    const summary = summarizeBacklog(backlog);
+    const shouldReanalyze = fullAutoMainline
+      && summary.pending === 0
+      && summary.inProgress === 0
+      && summary.failed === 0
+      && summary.blocked === 0
+      && reanalysisPasses < maxReanalysisPasses;
+
+    if (!shouldReanalyze) {
+      break;
+    }
+
+    reanalysisPasses += 1;
+    const continuation = await reanalyzeCurrentWorkspace(context, {
+      ...options,
+      engineResolution,
+      yes: true,
+    });
+
+    if (continuation.engineResolution?.ok) {
+      engineResolution = continuation.engineResolution;
+    }
+
+    if (!continuation.ok) {
+      results.push({
+        ok: false,
+        kind: "mainline-reanalysis-failed",
+        task: null,
+        summary: continuation.summary || "主线终态复核失败。",
+        engineResolution,
+      });
+      break;
+    }
+
+    const continuedBacklog = loadBacklog(context);
+    const continuedNextTask = selectNextTask(continuedBacklog, options);
+
+    if (continuedNextTask) {
+      results.push({
+        ok: true,
+        kind: "mainline-reopened",
+        task: null,
+        summary: [
+          "主线终态复核发现仍有剩余工作，已自动重建 backlog 并继续推进。",
+          `下一任务：${continuedNextTask.title}`,
+        ].join("\n"),
+        engineResolution,
+      });
+      continue;
+    }
+
+    results.push({
+      ok: true,
+      kind: "mainline-complete",
+      task: null,
+      summary: "主线终态复核通过：开发文档目标已闭合，没有发现新的剩余任务。",
+      engineResolution,
+    });
+    break;
   }
 
   return results;

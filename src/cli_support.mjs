@@ -352,6 +352,7 @@ export function renderAnalyzeStopMessage(reason) {
 export function renderAutoRunSummary(context, backlog, results, options = {}) {
   const summary = summarizeBacklog(backlog);
   const execution = analyzeExecution(backlog, options);
+  const mainlineClosed = results.some((item) => item.kind === "mainline-complete");
   const lines = [
     "自动执行结果",
     "============",
@@ -383,7 +384,9 @@ export function renderAutoRunSummary(context, backlog, results, options = {}) {
   lines.push("");
   lines.push("结论：");
   if (execution.state === "done") {
-    lines.push("- backlog 已全部完成");
+    lines.push(mainlineClosed
+      ? "- backlog 已全部完成，且主线终态复核通过"
+      : "- backlog 已全部完成");
   } else if (execution.blockedReason) {
     lines.push(`- 当前停止原因：${execution.blockedReason}`);
   } else {

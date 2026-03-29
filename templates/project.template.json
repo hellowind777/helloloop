@@ -1,6 +1,8 @@
 {
   "requiredDocs": [],
   "constraints": [],
+  "defaultEngine": "",
+  "lastSelectedEngine": "",
   "planner": {
     "minTasks": 3,
     "maxTasks": 8,

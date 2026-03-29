@@ -9,7 +9,7 @@ description: 当用户希望 Codex 先分析仓库当前进度、生成确认单
 
 ## 强制入口规则
 
-- 用户显式调用 `$helloloop` / `#helloloop` / `helloloop:helloloop` 时，默认必须优先执行 `npx helloloop` 或 `npx helloloop <PATH>`。
+- 用户显式调用 `$helloloop` / `#helloloop` / `helloloop:helloloop` 时，默认必须优先执行 `npx helloloop` 或 `npx helloloop <PATH>`；如果用户又明确指定了执行引擎，也允许使用 `npx helloloop codex|claude|gemini ...`。
 - 不允许在对话里手工模拟 `HelloLoop` 的分析、确认单、backlog 编排和自动续跑流程来代替 CLI。
 - 只有在以下情况，才允许先停下来问用户而不是直接执行 CLI：
   1. 用户既没有给路径，当前目录也无法判断项目仓库或开发文档
@@ -19,10 +19,11 @@ description: 当用户希望 Codex 先分析仓库当前进度、生成确认单
 
 ## `$helloloop` 的默认执行映射
 
-- 当前目录已经是目标项目仓库或开发文档目录 → 先执行 `npx helloloop`
-- 用户给了单一路径 → 先执行 `npx helloloop <PATH>`
+- 当前目录已经是目标项目仓库或开发文档目录 → 先执行 `npx helloloop --host-context codex`
+- 用户给了单一路径 → 先执行 `npx helloloop --host-context codex <PATH>`
 - 用户明确只想先看分析和确认单 → 执行 `npx helloloop --dry-run`
 - 用户明确要求跳过确认直接开始 → 执行 `npx helloloop -y`
+- 用户明确指定执行引擎 → 保留该引擎首参数；如果在 `Codex` 宿主内要求改用 `Claude` / `Gemini`，先确认，不允许静默切换
 - 用户在命令后附带了额外路径或自然语言要求 → 必须把这些附加内容一并传给主 CLI，不允许丢弃或手工改写
 
 ## 附加输入处理规则
@@ -67,14 +68,19 @@ description: 当用户希望 Codex 先分析仓库当前进度、生成确认单
 - 代码是事实源，开发文档是目标源。
 - `HelloLoop` 会先分析当前真实进度，再生成或刷新 `.helloloop/backlog.json`。
 - 分析后会展示中文执行确认单，明确告知路径判断、语义理解、项目匹配、当前进度、待办任务、验证命令和执行边界。
-- 用户确认后，默认会持续执行到 backlog 清空，或开发文档的最终目标完成且测试、验收通过，或遇到硬阻塞。
-- 真正的代码分析与实现仍由本机 `codex` CLI 完成。
+- 用户确认后，默认会持续执行到 backlog 清空且主线终态复核通过，或开发文档的最终目标完成且测试、验收通过，或遇到硬阻塞。
+- 每个任务在执行引擎声称“完成”后，还必须再过一层任务完成复核；如果只是部分完成，继续当前主线任务，不直接结束。
+- 真正的代码分析与实现由本轮选中的 `codex` / `claude` / `gemini` CLI 原生完成。
+- 如果当前引擎在运行中遇到登录失效、额度耗尽、429 限流等问题，必须暂停并询问是否切换到其他可用引擎。
 - `$helloloop` 的职责是把用户请求路由到主 CLI 流程，而不是在对话里手工复刻一套平行流程。
 
 ## 核心命令
 
 - `npx helloloop`
 - `npx helloloop <PATH>`
+- `npx helloloop codex`
+- `npx helloloop claude <PATH>`
+- `npx helloloop gemini <PATH> <补充说明>`
 - `npx helloloop <PATH> <补充说明>`
 - `npx helloloop --dry-run`
 - `npx helloloop -y`

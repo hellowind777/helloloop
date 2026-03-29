@@ -15,6 +15,7 @@ const defaultPolicy = {
   maxLoopTasks: 4,
   maxTaskAttempts: 2,
   maxTaskStrategies: 4,
+  maxReanalysisPasses: 3,
   stopOnFailure: false,
   stopOnHighRisk: true,
   codex: {
@@ -23,6 +24,20 @@ const defaultPolicy = {
     sandbox: "workspace-write",
     dangerouslyBypassSandbox: false,
     jsonOutput: true,
+  },
+  claude: {
+    model: "",
+    executable: "",
+    permissionMode: "bypassPermissions",
+    analysisPermissionMode: "plan",
+    outputFormat: "text",
+  },
+  gemini: {
+    model: "",
+    executable: "",
+    approvalMode: "yolo",
+    analysisApprovalMode: "plan",
+    outputFormat: "text",
   },
 };
 
@@ -46,6 +61,14 @@ export function loadPolicy(context) {
     ...defaultPolicy.codex,
     ...(policy.codex || {}),
   };
+  policy.claude = {
+    ...defaultPolicy.claude,
+    ...(policy.claude || {}),
+  };
+  policy.gemini = {
+    ...defaultPolicy.gemini,
+    ...(policy.gemini || {}),
+  };
   return policy;
 }
 
@@ -54,6 +77,8 @@ export function loadProjectConfig(context) {
     return {
       requiredDocs: [],
       constraints: [],
+      defaultEngine: "",
+      lastSelectedEngine: "",
       planner: defaultPlanner,
     };
   }
@@ -62,6 +87,8 @@ export function loadProjectConfig(context) {
   return {
     requiredDocs: Array.isArray(config.requiredDocs) ? config.requiredDocs : [],
     constraints: Array.isArray(config.constraints) ? config.constraints : [],
+    defaultEngine: typeof config.defaultEngine === "string" ? config.defaultEngine : "",
+    lastSelectedEngine: typeof config.lastSelectedEngine === "string" ? config.lastSelectedEngine : "",
     planner: {
       ...defaultPlanner,
       ...(config.planner || {}),
@@ -85,6 +112,10 @@ export function saveBacklog(context, backlog) {
     ...backlog,
     updatedAt: nowIso(),
   });
+}
+
+export function saveProjectConfig(context, config) {
+  writeJson(context.projectFile, config);
 }
 
 export function loadVerifyCommands(context) {

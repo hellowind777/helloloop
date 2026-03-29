@@ -44,13 +44,19 @@ process.stdout.write(args.includes("--output-schema") ? "analysis ok\\n" : "exec
 `);
 
   if (process.platform === "win32") {
-    writeText(path.join(binDir, "codex.ps1"), `node "$PSScriptRoot/codex-stub.cjs" @args\r\n`);
+    writeText(path.join(binDir, "codex.ps1"), `node "$PSScriptRoot/codex-stub.cjs" @args\r\nexit $LASTEXITCODE\r\n`);
+    writeText(path.join(binDir, "claude.ps1"), "Write-Error 'claude unavailable in test' ; exit 1\r\n");
+    writeText(path.join(binDir, "gemini.ps1"), "Write-Error 'gemini unavailable in test' ; exit 1\r\n");
     return;
   }
 
   const shellFile = path.join(binDir, "codex");
   writeText(shellFile, `#!/usr/bin/env sh\nnode "$(dirname "$0")/codex-stub.cjs" "$@"\n`);
   fs.chmodSync(shellFile, 0o755);
+  writeText(path.join(binDir, "claude"), "#!/usr/bin/env sh\necho claude unavailable in test >&2\nexit 1\n");
+  fs.chmodSync(path.join(binDir, "claude"), 0o755);
+  writeText(path.join(binDir, "gemini"), "#!/usr/bin/env sh\necho gemini unavailable in test >&2\nexit 1\n");
+  fs.chmodSync(path.join(binDir, "gemini"), 0o755);
 }
 
 function spawnHelloLoop(args, options = {}) {
@@ -60,6 +66,22 @@ function spawnHelloLoop(args, options = {}) {
     env: options.env || process.env,
     input: options.input,
   });
+}
+
+function cliExecutable(binDir, commandName) {
+  return path.join(binDir, process.platform === "win32" ? `${commandName}.ps1` : commandName);
+}
+
+function buildCliEnv(binDir, extra = {}) {
+  return {
+    ...process.env,
+    PATH: [binDir, process.env.PATH || ""].join(path.delimiter),
+    HELLOLOOP_CODEX_EXECUTABLE: cliExecutable(binDir, "codex"),
+    HELLOLOOP_CLAUDE_EXECUTABLE: cliExecutable(binDir, "claude"),
+    HELLOLOOP_GEMINI_EXECUTABLE: cliExecutable(binDir, "gemini"),
+    HELLOLOOP_USER_SETTINGS_FILE: path.join(binDir, "user-settings.json"),
+    ...extra,
+  };
 }
 
 function sampleAnalysisPayload(overrides = {}) {
@@ -120,10 +142,7 @@ test("混合输入中的路径与英文需求会一起进入确认单，而不�
   writeText(path.join(tempRepo, "src", "index.js"), "console.log('demo');\n");
 
   const result = spawnHelloLoop([docsRoot, tempRepo, ...requestText.split(" ")], {
-    env: {
-      ...process.env,
-      PATH: [fakeBin, process.env.PATH || ""].join(path.delimiter),
-    },
+    env: buildCliEnv(fakeBin),
     input: "n\n",
   });
 
@@ -151,10 +170,7 @@ test("只有自然语言补充要求时也会原样进入确认单，不依赖�
 
   const result = spawnHelloLoop(requestText.split(" "), {
     cwd: tempRepo,
-    env: {
-      ...process.env,
-      PATH: [fakeBin, process.env.PATH || ""].join(path.delimiter),
-    },
+    env: buildCliEnv(fakeBin),
     input: "n\n",
   });
 
@@ -192,10 +208,7 @@ test("分析结果中的需求语义理解会展示在确认单中", () => {
 
   const result = spawnHelloLoop(requestText.split(" "), {
     cwd: tempRepo,
-    env: {
-      ...process.env,
-      PATH: [fakeBin, process.env.PATH || ""].join(path.delimiter),
-    },
+    env: buildCliEnv(fakeBin),
     input: "n\n",
   });
 
@@ -249,10 +262,7 @@ test("确认单会展示路径判断来源和把握，而不是黑盒推断", ()
   writeText(path.join(tempRepo, "src", "index.js"), "console.log('alpha');\n");
 
   const result = spawnHelloLoop([docsRoot], {
-    env: {
-      ...process.env,
-      PATH: [fakeBin, process.env.PATH || ""].join(path.delimiter),
-    },
+    env: buildCliEnv(fakeBin),
     input: "n\n",
   });
 

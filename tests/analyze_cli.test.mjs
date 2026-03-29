@@ -26,6 +26,26 @@ function createFakeCodex(binDir, payload) {
 const fs = require("node:fs");
 const path = require("node:path");
 const args = process.argv.slice(2);
+function buildReviewPayload(sourcePayload) {
+  const task = Array.isArray(sourcePayload?.tasks) && sourcePayload.tasks[0]
+    ? sourcePayload.tasks[0]
+    : { title: "当前任务", acceptance: ["任务已完成"] };
+  const acceptance = Array.isArray(task.acceptance) && task.acceptance.length
+    ? task.acceptance
+    : ["任务已完成"];
+  return {
+    verdict: "complete",
+    summary: task.title + "已真正完成。",
+    acceptanceChecks: acceptance.map((item) => ({
+      item,
+      status: "met",
+      evidence: "仓库内已有对应实现，且验证通过。",
+    })),
+    missing: [],
+    blockerReason: "",
+    nextAction: "继续主线下一任务。",
+  };
+}
 if (args.includes("--version")) {
   process.stdout.write("codex 0.117.0\\n");
   process.exit(0);
@@ -33,10 +53,20 @@ if (args.includes("--version")) {
 const outputIndex = args.indexOf("-o");
 if (outputIndex >= 0 && args[outputIndex + 1]) {
   fs.mkdirSync(path.dirname(args[outputIndex + 1]), { recursive: true });
-  const isAnalyze = args.includes("--output-schema");
+  const schemaIndex = args.indexOf("--output-schema");
+  const schemaName = schemaIndex >= 0 && args[schemaIndex + 1]
+    ? path.basename(args[schemaIndex + 1])
+    : "";
+  const isAnalyze = schemaIndex >= 0;
   fs.writeFileSync(
     args[outputIndex + 1],
-    isAnalyze ? ${JSON.stringify(JSON.stringify(payload))} : "任务执行完成",
+    !isAnalyze
+      ? "任务执行完成"
+      : JSON.stringify(
+        schemaName === "task-review-output.schema.json"
+          ? buildReviewPayload(${JSON.stringify(payload)})
+          : ${JSON.stringify(payload)}
+      ),
     "utf8"
   );
 }
@@ -44,13 +74,19 @@ process.stdout.write(args.includes("--output-schema") ? "analysis ok\\n" : "exec
 `);
 
   if (process.platform === "win32") {
-    writeText(path.join(binDir, "codex.ps1"), `node "$PSScriptRoot/codex-stub.cjs" @args\r\n`);
+    writeText(path.join(binDir, "codex.ps1"), `node "$PSScriptRoot/codex-stub.cjs" @args\r\nexit $LASTEXITCODE\r\n`);
+    writeText(path.join(binDir, "claude.ps1"), "Write-Error 'claude unavailable in test' ; exit 1\r\n");
+    writeText(path.join(binDir, "gemini.ps1"), "Write-Error 'gemini unavailable in test' ; exit 1\r\n");
     return;
   }
 
   const shellFile = path.join(binDir, "codex");
   writeText(shellFile, `#!/usr/bin/env sh\nnode "$(dirname "$0")/codex-stub.cjs" "$@"\n`);
   fs.chmodSync(shellFile, 0o755);
+  writeText(path.join(binDir, "claude"), "#!/usr/bin/env sh\necho claude unavailable in test >&2\nexit 1\n");
+  fs.chmodSync(path.join(binDir, "claude"), 0o755);
+  writeText(path.join(binDir, "gemini"), "#!/usr/bin/env sh\necho gemini unavailable in test >&2\nexit 1\n");
+  fs.chmodSync(path.join(binDir, "gemini"), 0o755);
 }
 
 function createSequencedFakeCodex(binDir, payloads) {
@@ -63,6 +99,26 @@ function createSequencedFakeCodex(binDir, payloads) {
 const fs = require("node:fs");
 const path = require("node:path");
 const args = process.argv.slice(2);
+function buildReviewPayload(sourcePayload) {
+  const task = Array.isArray(sourcePayload?.tasks) && sourcePayload.tasks[0]
+    ? sourcePayload.tasks[0]
+    : { title: "当前任务", acceptance: ["任务已完成"] };
+  const acceptance = Array.isArray(task.acceptance) && task.acceptance.length
+    ? task.acceptance
+    : ["任务已完成"];
+  return {
+    verdict: "complete",
+    summary: task.title + "已真正完成。",
+    acceptanceChecks: acceptance.map((item) => ({
+      item,
+      status: "met",
+      evidence: "仓库内已有对应实现，且验证通过。",
+    })),
+    missing: [],
+    blockerReason: "",
+    nextAction: "继续主线下一任务。",
+  };
+}
 if (args.includes("--version")) {
   process.stdout.write("codex 0.117.0\\n");
   process.exit(0);
@@ -70,13 +126,21 @@ if (args.includes("--version")) {
 const outputIndex = args.indexOf("-o");
 if (outputIndex >= 0 && args[outputIndex + 1]) {
   fs.mkdirSync(path.dirname(args[outputIndex + 1]), { recursive: true });
-  const isAnalyze = args.includes("--output-schema");
+  const schemaIndex = args.indexOf("--output-schema");
+  const schemaName = schemaIndex >= 0 && args[schemaIndex + 1]
+    ? path.basename(args[schemaIndex + 1])
+    : "";
+  const isAnalyze = schemaIndex >= 0;
   if (isAnalyze) {
     const payloads = JSON.parse(fs.readFileSync(${JSON.stringify(payloadFile)}, "utf8"));
     const currentIndex = Number(fs.readFileSync(${JSON.stringify(stateFile)}, "utf8")) || 0;
     const payload = payloads[Math.min(currentIndex, payloads.length - 1)];
-    fs.writeFileSync(${JSON.stringify(stateFile)}, String(currentIndex + 1), "utf8");
-    fs.writeFileSync(args[outputIndex + 1], JSON.stringify(payload), "utf8");
+    if (schemaName === "task-review-output.schema.json") {
+      fs.writeFileSync(args[outputIndex + 1], JSON.stringify(buildReviewPayload(payload)), "utf8");
+    } else {
+      fs.writeFileSync(${JSON.stringify(stateFile)}, String(currentIndex + 1), "utf8");
+      fs.writeFileSync(args[outputIndex + 1], JSON.stringify(payload), "utf8");
+    }
   } else {
     fs.writeFileSync(args[outputIndex + 1], "任务执行完成", "utf8");
   }
@@ -85,13 +149,19 @@ process.stdout.write(args.includes("--output-schema") ? "analysis ok\\n" : "exec
 `);
 
   if (process.platform === "win32") {
-    writeText(path.join(binDir, "codex.ps1"), `node "$PSScriptRoot/codex-stub.cjs" @args\r\n`);
+    writeText(path.join(binDir, "codex.ps1"), `node "$PSScriptRoot/codex-stub.cjs" @args\r\nexit $LASTEXITCODE\r\n`);
+    writeText(path.join(binDir, "claude.ps1"), "Write-Error 'claude unavailable in test' ; exit 1\r\n");
+    writeText(path.join(binDir, "gemini.ps1"), "Write-Error 'gemini unavailable in test' ; exit 1\r\n");
     return;
   }
 
   const shellFile = path.join(binDir, "codex");
   writeText(shellFile, `#!/usr/bin/env sh\nnode "$(dirname "$0")/codex-stub.cjs" "$@"\n`);
   fs.chmodSync(shellFile, 0o755);
+  writeText(path.join(binDir, "claude"), "#!/usr/bin/env sh\necho claude unavailable in test >&2\nexit 1\n");
+  fs.chmodSync(path.join(binDir, "claude"), 0o755);
+  writeText(path.join(binDir, "gemini"), "#!/usr/bin/env sh\necho gemini unavailable in test >&2\nexit 1\n");
+  fs.chmodSync(path.join(binDir, "gemini"), 0o755);
 }
 
 function spawnHelloLoop(args, options = {}) {
@@ -101,6 +171,22 @@ function spawnHelloLoop(args, options = {}) {
     env: options.env || process.env,
     input: options.input,
   });
+}
+
+function cliExecutable(binDir, commandName) {
+  return path.join(binDir, process.platform === "win32" ? `${commandName}.ps1` : commandName);
+}
+
+function buildCliEnv(binDir, extra = {}) {
+  return {
+    ...process.env,
+    PATH: [binDir, process.env.PATH || ""].join(path.delimiter),
+    HELLOLOOP_CODEX_EXECUTABLE: cliExecutable(binDir, "codex"),
+    HELLOLOOP_CLAUDE_EXECUTABLE: cliExecutable(binDir, "claude"),
+    HELLOLOOP_GEMINI_EXECUTABLE: cliExecutable(binDir, "gemini"),
+    HELLOLOOP_USER_SETTINGS_FILE: path.join(binDir, "user-settings.json"),
+    ...extra,
+  };
 }
 
 function sampleAnalysisPayload(overrides = {}) {
@@ -159,10 +245,7 @@ test("零参数默认先展示确认单，拒绝后只保留分析结果不自�
 
   const result = spawnHelloLoop([], {
     cwd: tempRepo,
-    env: {
-      ...process.env,
-      PATH: [fakeBin, process.env.PATH || ""].join(path.delimiter),
-    },
+    env: buildCliEnv(fakeBin),
     input: "n\n",
   });
 
@@ -196,10 +279,7 @@ test("零参数默认在确认后会自动继续执行直到当前任务完成",
 
   const result = spawnHelloLoop([], {
     cwd: tempRepo,
-    env: {
-      ...process.env,
-      PATH: [fakeBin, process.env.PATH || ""].join(path.delimiter),
-    },
+    env: buildCliEnv(fakeBin),
     input: "y\n",
   });
 
@@ -260,10 +340,7 @@ test("只给开发文档路径时也会先展示确认单再等待用户决定",
   writeText(path.join(tempRepo, "src", "index.js"), "console.log('alpha');\n");
 
   const result = spawnHelloLoop([docsRoot], {
-    env: {
-      ...process.env,
-      PATH: [fakeBin, process.env.PATH || ""].join(path.delimiter),
-    },
+    env: buildCliEnv(fakeBin),
     input: "n\n",
   });
 
@@ -305,10 +382,7 @@ test("工作区根目录会先提示选择顶层项目，而不是把深层依�
 
   const result = spawnHelloLoop([], {
     cwd: tempRoot,
-    env: {
-      ...process.env,
-      PATH: [fakeBin, process.env.PATH || ""].join(path.delimiter),
-    },
+    env: buildCliEnv(fakeBin),
     input: "2\nn\n",
   });
 
@@ -342,10 +416,7 @@ test("工作区没有明确开发文档时会先展示顶层目录并要求输�
 
   const result = spawnHelloLoop([], {
     cwd: tempRoot,
-    env: {
-      ...process.env,
-      PATH: [fakeBin, process.env.PATH || ""].join(path.delimiter),
-    },
+    env: buildCliEnv(fakeBin),
     input: `${plansRoot}\n2\nn\n`,
   });
 
@@ -378,10 +449,7 @@ test("多个顶层文档文件时会先让用户选择开发文档而不是直�
 
   const result = spawnHelloLoop([], {
     cwd: tempRoot,
-    env: {
-      ...process.env,
-      PATH: [fakeBin, process.env.PATH || ""].join(path.delimiter),
-    },
+    env: buildCliEnv(fakeBin),
     input: "1\n2\nn\n",
   });
 
@@ -415,10 +483,7 @@ test("文档中的深层依赖路径会回溯到真实项目根目录", () => {
   writeText(path.join(noisyPackage, "index.d.ts"), "export {};\n");
 
   const result = spawnHelloLoop([docsRoot], {
-    env: {
-      ...process.env,
-      PATH: [fakeBin, process.env.PATH || ""].join(path.delimiter),
-    },
+    env: buildCliEnv(fakeBin),
     input: "n\n",
   });
 
@@ -444,10 +509,7 @@ test("无法推断现有项目时允许用户输入一个不存在的项目路�
 
   const result = spawnHelloLoop([], {
     cwd: tempRoot,
-    env: {
-      ...process.env,
-      PATH: [fakeBin, process.env.PATH || ""].join(path.delimiter),
-    },
+    env: buildCliEnv(fakeBin),
     input: `${plansRoot}\n${newRepo}\nn\n`,
   });
 
@@ -474,10 +536,7 @@ test("--dry-run 只展示分析与确认信息，不提示确认也不自动执�
 
   const result = spawnHelloLoop(["--dry-run"], {
     cwd: tempRepo,
-    env: {
-      ...process.env,
-      PATH: [fakeBin, process.env.PATH || ""].join(path.delimiter),
-    },
+    env: buildCliEnv(fakeBin),
   });
 
   try {
@@ -530,10 +589,7 @@ test("当前项目与开发文档冲突时，会先询问是否清理重建并�
 
   const result = spawnHelloLoop([], {
     cwd: tempRepo,
-    env: {
-      ...process.env,
-      PATH: [fakeBin, process.env.PATH || ""].join(path.delimiter),
-    },
+    env: buildCliEnv(fakeBin),
     input: "2\nn\n",
   });
 

@@ -3,6 +3,7 @@ import path from "node:path";
 import { renderInputIssueLines, renderUserIntentLines } from "./analyze_user_input.mjs";
 import { analyzeExecution, summarizeBacklog } from "./backlog.mjs";
 import { loadPolicy, loadVerifyCommands } from "./config.mjs";
+import { getEngineDisplayName } from "./engine_metadata.mjs";
 
 function toDisplayPath(repoRoot, targetPath) {
   const absolutePath = path.resolve(targetPath);
@@ -133,15 +134,35 @@ function renderRepoDecisionLines(analysis) {
   ];
 }
 
+function renderEngineResolutionLines(engineResolution) {
+  if (!engineResolution?.engine) {
+    return [];
+  }
+
+  const availableDisplay = Array.isArray(engineResolution.availableEngines) && engineResolution.availableEngines.length
+    ? engineResolution.availableEngines.map((engine) => getEngineDisplayName(engine)).join("、")
+    : "未检测到其他可用引擎";
+  const basisText = Array.isArray(engineResolution.basis) && engineResolution.basis.length
+    ? engineResolution.basis.join("；")
+    : "无";
+
+  return [
+    "执行引擎：",
+    `- 当前宿主：${engineResolution.hostDisplayName || "终端"}`,
+    `- 本次引擎：${engineResolution.displayName || getEngineDisplayName(engineResolution.engine)}`,
+    `- 选择来源：${engineResolution.sourceLabel || "自动判断"}`,
+    `- 选择依据：${basisText}`,
+    `- 当前可用：${availableDisplay}`,
+    "- 故障处理：如果当前引擎在分析或执行阶段遇到登录 / 配额 / 限流问题，HelloLoop 会暂停并询问是否切换其他可用引擎",
+  ];
+}
+
 export function resolveAutoRunMaxTasks(backlog, options = {}) {
   const explicitMaxTasks = Number(options.maxTasks);
   if (Number.isFinite(explicitMaxTasks) && explicitMaxTasks > 0) {
     return explicitMaxTasks;
   }
-
-  const summary = summarizeBacklog(backlog);
-  const pendingTotal = summary.pending + summary.inProgress;
-  return Math.max(1, pendingTotal);
+  return 0;
 }
 
 export function renderAnalyzeConfirmation(context, analysis, backlog, options = {}, discovery = {}) {
@@ -162,6 +183,7 @@ export function renderAnalyzeConfirmation(context, analysis, backlog, options = 
     ...renderResolutionLines(discovery, context, docsDisplay),
     ...(userIntentLines.length ? ["", "本次命令补充输入：", ...formatList(userIntentLines)] : []),
     ...(inputIssueLines.length ? ["", "输入提示：", ...inputIssueLines] : []),
+    ...(renderEngineResolutionLines(options.engineResolution).length ? ["", ...renderEngineResolutionLines(options.engineResolution)] : []),
     ...(renderRequestInterpretationLines(analysis).length ? ["", ...renderRequestInterpretationLines(analysis)] : []),
     ...(renderRepoDecisionLines(analysis).length ? ["", ...renderRepoDecisionLines(analysis)] : []),
     "",
@@ -192,7 +214,9 @@ export function renderAnalyzeConfirmation(context, analysis, backlog, options = 
       ? `- 当前阻塞：${execution.blockedReason}`
       : "- 当前阻塞：无",
     "- 偏差修正：按 backlog 优先级执行；如果分析识别出偏差修正任务，会先收口再继续后续开发",
-    `- 自动推进：最多 ${autoRunMaxTasks} 个任务，直到 backlog 清空或遇到硬阻塞`,
+    autoRunMaxTasks > 0
+      ? `- 自动推进：最多 ${autoRunMaxTasks} 个任务；若主线终态复核仍发现缺口，则到达上限后暂停`
+      : "- 自动推进：持续执行，直到 backlog 清空且主线终态复核通过，或遇到硬阻塞",
     `- 单任务重试：每种策略最多 ${policy.maxTaskAttempts} 次，共 ${policy.maxTaskStrategies} 轮策略`,
     "",
     "待执行任务预览：",

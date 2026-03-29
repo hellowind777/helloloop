@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { classifyExplicitPath, pathExists, resolveAbsolute } from "./discovery_paths.mjs";
+import { normalizeEngineName } from "./engine_metadata.mjs";
 
 const DOC_SUFFIX = new Set([
   ".md",
@@ -145,7 +146,8 @@ export function normalizeAnalyzeOptions(rawOptions = {}, cwd = process.cwd()) {
     requiredDocs: Array.isArray(rawOptions.requiredDocs) ? [...rawOptions.requiredDocs] : [],
     constraints: Array.isArray(rawOptions.constraints) ? [...rawOptions.constraints] : [],
   };
-  const positionals = Array.isArray(rawOptions.positionalArgs) ? rawOptions.positionalArgs : [];
+  const rawPositionals = Array.isArray(rawOptions.positionalArgs) ? rawOptions.positionalArgs : [];
+  const positionals = [...rawPositionals];
   const explicitRefs = [];
   const requestTokens = [];
   const issues = {
@@ -160,6 +162,18 @@ export function normalizeAnalyzeOptions(rawOptions = {}, cwd = process.cwd()) {
   let repoRoot = options.repoRoot ? resolveAbsolute(options.repoRoot, cwd) : "";
   let inputPath = options.inputPath ? resolveAbsolute(options.inputPath, cwd) : "";
   let allowNewRepoRoot = Boolean(options.allowNewRepoRoot);
+  let engine = normalizeEngineName(options.engine);
+  let engineSource = options.engineSource || (engine ? "flag" : "");
+
+  if (!engine && positionals.length) {
+    const firstToken = String(positionals[0] || "").trim();
+    const leadingEngine = normalizeEngineName(firstToken);
+    if (leadingEngine && firstToken.toLowerCase() === leadingEngine) {
+      engine = leadingEngine;
+      engineSource = "leading_positional";
+      positionals.shift();
+    }
+  }
 
   if (docsPath) {
     ensureSelectionSource(selectionSources, "docs", rawOptions.selectionSources?.docs || "flag");
@@ -246,15 +260,19 @@ export function normalizeAnalyzeOptions(rawOptions = {}, cwd = process.cwd()) {
   options.repoRoot = repoRoot;
   options.inputPath = inputPath;
   options.allowNewRepoRoot = allowNewRepoRoot;
+  options.engine = engine;
+  options.engineSource = engineSource;
   options.selectionSources = selectionSources;
   options.userRequestText = userRequestText;
   options.inputIssues = issues;
   options.userIntent = {
-    rawPositionals: positionals,
+    rawPositionals,
     explicitRefs,
     requestText: userRequestText,
     issues,
     selectionSources,
+    explicitEngine: engine,
+    explicitEngineSource: engineSource,
   };
 
   return options;

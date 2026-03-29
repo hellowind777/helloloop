@@ -47,7 +47,7 @@
 说明：
 
 - `docs/` 和 `tests/` 只属于源码仓库，不会复制进运行时安装包
-- 运行状态始终写入目标项目仓库的 `.helloloop/`，不是写到上面的安装目录
+- 运行状态始终写入目标项目仓库的 `.helloloop/`
 
 ## 推荐安装
 
@@ -126,12 +126,8 @@ npx helloloop uninstall --host all
 ```bash
 npx helloloop
 npx helloloop <PATH>
-```
-
-也支持路径 + 自然语言混合输入：
-
-```bash
-npx helloloop <PATH> <补充说明>
+npx helloloop claude
+npx helloloop gemini <PATH> <补充说明>
 ```
 
 宿主内的原生入口：
@@ -142,12 +138,31 @@ Claude  -> /helloloop
 Gemini  -> /helloloop
 ```
 
-默认行为是：
+默认行为：
 
 1. 自动识别项目仓库与开发文档
-2. 分析当前代码与文档目标的真实差距
-3. 生成中文执行确认单
-4. 用户确认后，继续按当前宿主的原生 agent 逻辑执行开发、测试和验收
+2. 自动选择或询问本次执行引擎
+3. 分析当前代码与文档目标的真实差距
+4. 生成中文执行确认单
+5. 用户确认后，继续按所选引擎推进开发、测试和验收
+6. 每个任务完成后，会再做一次任务完成复核
+7. backlog 清空后，会再做一次主线终态复核；若仍有缺口则自动继续
+
+## 引擎选择补充说明
+
+- `npx helloloop codex`
+- `npx helloloop claude <PATH>`
+- `npx helloloop gemini <PATH> 接续开发`
+
+如果命令首参数没有显式指定执行引擎，则按以下顺序判断：
+
+1. 当前宿主
+2. 项目上次 / 默认引擎
+3. 用户上次 / 默认引擎
+4. 当前唯一可用引擎
+5. 多个可用但仍无结论时，询问用户一次
+
+如果当前引擎在运行中遇到登录失效、额度耗尽、429 限流等问题，`HelloLoop` 会暂停并询问是否切换到其他可用引擎。
 
 ## 交互补充说明
 
@@ -156,6 +171,7 @@ Gemini  -> /helloloop
 - 项目路径只问一次：已有目录按现有项目处理，不存在的目录按新项目路径处理
 - 如果当前项目与开发文档目标明显冲突，会先确认是继续、重建还是取消
 - 如果希望非交互直接按重建方案执行，可追加 `--rebuild-existing`
+- 如果执行引擎只是部分完成当前任务，`HelloLoop` 会继续收口当前主线任务，而不是直接结束
 
 ## 常用执行选项
 
@@ -177,11 +193,9 @@ npx helloloop -y
 npx helloloop --repo <PROJECT_ROOT> --docs <DOCS_PATH>
 ```
 
-如果已经做了全局安装，也可以把 `npx helloloop` 简写为 `helloloop`。是否立刻可用取决于当前 shell 是否已经刷新 `PATH`。
-
 ## 在 Codex 中使用
 
-`npx helloloop ...` 可以直接在当前 Codex 会话里执行，不需要重开终端。
+`npx helloloop ...` 可以直接在当前 `Codex` 会话里执行，不需要重开终端。
 
 如果通过技能入口调用，也就是：
 
@@ -189,25 +203,13 @@ npx helloloop --repo <PROJECT_ROOT> --docs <DOCS_PATH>
 $helloloop
 ```
 
-推荐行为仍然应与主命令一致：优先进入 `npx helloloop` 主流程，而不是在对话里手工模拟分析和续跑。
+推荐行为仍然与主命令一致：优先进入 `npx helloloop` 主流程。若在 `Codex` 内显式要求改用 `Claude` / `Gemini`，会先确认再切换。
 
 ## Doctor
 
-检查默认宿主：
-
 ```bash
 npx helloloop doctor
-```
-
-检查全部宿主：
-
-```bash
 npx helloloop doctor --host all
-```
-
-检查指定 home：
-
-```bash
 npx helloloop doctor --host all --codex-home <CODEX_HOME> --claude-home <CLAUDE_HOME> --gemini-home <GEMINI_HOME>
 ```
 
@@ -223,7 +225,7 @@ npx helloloop doctor --host all --codex-home <CODEX_HOME> --claude-home <CLAUDE_
 
 - Windows：优先 `pwsh`，也支持 `bash` 和 `powershell`，不回退到 `cmd.exe`
 - macOS / Linux：优先 `bash`，缺失时回退 `sh`
-- 所有平台都遵循先确认、后执行、再验证的安全边界
+- 所有平台都遵循先确认、后执行、再验证、再复核的安全边界
 
 ## 许可证
 

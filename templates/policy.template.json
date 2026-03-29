@@ -4,6 +4,7 @@
   "maxLoopTasks": 4,
   "maxTaskAttempts": 2,
   "maxTaskStrategies": 4,
+  "maxReanalysisPasses": 3,
   "stopOnFailure": false,
   "stopOnHighRisk": true,
   "codex": {
@@ -12,5 +13,19 @@
     "sandbox": "workspace-write",
     "dangerouslyBypassSandbox": false,
     "jsonOutput": true
+  },
+  "claude": {
+    "model": "",
+    "executable": "",
+    "permissionMode": "bypassPermissions",
+    "analysisPermissionMode": "plan",
+    "outputFormat": "text"
+  },
+  "gemini": {
+    "model": "",
+    "executable": "",
+    "approvalMode": "yolo",
+    "analysisApprovalMode": "plan",
+    "outputFormat": "text"
   }
 }

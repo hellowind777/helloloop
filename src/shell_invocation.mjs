@@ -223,3 +223,19 @@ export function resolveCodexInvocation(options = {}) {
     toolDisplayName: "Codex",
   });
 }
+
+export function resolveClaudeInvocation(options = {}) {
+  return resolveCliInvocation({
+    ...options,
+    commandName: "claude",
+    toolDisplayName: "Claude",
+  });
+}
+
+export function resolveGeminiInvocation(options = {}) {
+  return resolveCliInvocation({
+    ...options,
+    commandName: "gemini",
+    toolDisplayName: "Gemini",
+  });
+}

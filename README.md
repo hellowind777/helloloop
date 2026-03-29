@@ -1,74 +1,89 @@
 # HelloLoop
 
-`HelloLoop` 是一个面向 `Codex CLI`、`Claude Code`、`Gemini CLI` 的多宿主开发工作流插件，用来把“根据开发文档持续接续开发、测试、验收直到最终目标完成”收敛成一条统一、可确认、可追踪的标准流程。
+`HelloLoop` 是一个面向 `Codex CLI`、`Claude Code`、`Gemini CLI` 的多宿主开发工作流插件，用来把“根据开发文档持续接续开发、测试、验收，直到最终目标完成”收敛成一条统一、可确认、可追踪的标准流程。
 
-它的定位很明确：
+它的核心原则很简单：
 
-- `Codex CLI`：首发平台、参考实现、最佳体验路径
-- `Claude Code` / `Gemini CLI`：各自按原生 agent 逻辑执行，但共享同一套 `.helloloop/` 工作流规范
-- 三家都能安装、都能用、都原生执行开发，不是让一家的 CLI 去伪装成另一家
+- 三家都能安装、都能用、都按各自原生 agent 逻辑执行
+- `Codex CLI` 仍然是首发平台、参考实现和最佳体验路径
+- 运行状态统一写入目标仓库根目录的 `.helloloop/`
+- 真正执行前先分析、先确认，执行中不静默失败、不静默切换
 
-## 核心价值
+## 宿主与执行引擎
 
-- **一条主命令**：优先只用 `npx helloloop` 或 `npx helloloop <PATH>`
-- **自动补全上下文**：自动识别开发文档、项目仓库、当前进度和偏差
-- **先确认再执行**：真正改代码前先输出中文执行确认单
-- **持续推进到底**：确认后继续开发、测试、验收，直到完成最终目标或遇到硬阻塞
-- **跨宿主统一状态**：运行状态统一写入目标仓库根目录的 `.helloloop/`
-- **跨平台安全**：兼容 Windows / macOS / Linux，Windows 不回退到 `cmd.exe`
+`HelloLoop` 区分两个概念：
+
+- **宿主**：你从哪里进入，例如终端、`Codex`、`Claude`、`Gemini`
+- **执行引擎**：真正负责本轮分析 / 开发 / 测试推进的 CLI
+
+这意味着：
+
+- 终端里执行 `npx helloloop` 时，不会再静默固定用 `Codex`
+- 在 `Codex` 里触发 `$helloloop` 时，默认优先当前宿主 `Codex`
+- 在 `Claude` / `Gemini` 原生命令里触发时，默认优先各自当前宿主
+- 如果你在某个宿主里显式要求改用别的引擎，`HelloLoop` 会先确认，不会静默切换
 
 ## 支持矩阵
 
-| 宿主 | 安装方式 | 原生入口 | 执行方式 |
+| 宿主 | 安装方式 | 原生入口 | 说明 |
 | --- | --- | --- | --- |
 | `Codex CLI` | `helloloop install --host codex` | `$helloloop` / `npx helloloop` | Codex 原生插件 + CLI |
 | `Claude Code` | `helloloop install --host claude` | `/helloloop` | Claude 原生 marketplace / plugin |
 | `Gemini CLI` | `helloloop install --host gemini` | `/helloloop` | Gemini 原生 extension |
 
-## 默认工作流
-
-无论从哪个宿主进入，`HelloLoop` 都遵循同一条主线：
-
-1. 自动识别目标项目仓库与开发文档
-2. 分析“代码当前做到哪里了”“与文档目标是否有偏差”“当前项目是否匹配文档目标”
-3. 在目标仓库根目录创建或刷新 `.helloloop/`
-4. 输出中文执行确认单
-5. 用户确认后，按当前宿主的原生 agent 逻辑继续推进开发、测试和验收
-
-如果分析发现当前实现已经偏离开发文档，`HelloLoop` 会优先先收口偏差，再继续后面的 backlog。
-
 ## 最短使用方式
 
-推荐优先只记住下面两条：
+推荐先记住下面四种：
 
 ```bash
 npx helloloop
 npx helloloop <PATH>
+npx helloloop claude
+npx helloloop gemini <PATH> 接续完成剩余开发
 ```
 
-也支持在命令后继续附带路径和自然语言要求：
+其中：
 
-```bash
-npx helloloop <PATH> <补充说明>
-```
+- `<PATH>` 可以是项目仓库路径、开发文档目录、开发文档文件
+- 命令后可以继续追加自然语言要求
+- 不确定时，优先只输入 `npx helloloop`
 
-例如：
+## 执行引擎选择规则
 
-```bash
-npx helloloop docs/plan.md ./demo-app 接续完成剩余开发内容，并严格执行测试和验收
-```
+默认选择顺序如下：
 
-这里的 `<PATH>` 可以是：
+1. 命令首参数显式引擎：`codex` / `claude` / `gemini`
+2. 当前宿主默认引擎
+3. 项目上次引擎 / 项目默认引擎
+4. 用户上次引擎 / 用户默认引擎
+5. 当前唯一可用引擎
+6. 多个可用但仍无结论时，停下来询问一次
 
-- 项目仓库路径
-- 开发文档目录
-- 开发文档文件
+补充说明：
 
-这里的 `<补充说明>` 可以是：
+- 首参只有第一个裸词会被解释为引擎；如果你真要把 `claude` 当目录名，请写成 `./claude`、`.\claude` 或绝对路径
+- 命令后的自然语言如果明确提到 `codex`、`claude`、`gemini`，也会纳入意图判断
+- `已安装` 不等于 `可继续执行`；如果当前引擎在运行中遇到登录失效、额度耗尽、429 限流等问题，`HelloLoop` 会暂停并询问是否切换到其他可用引擎
 
-- 第二个显式路径
-- 本次执行的额外要求
-- 偏差修正、质量要求、交付目标等自然语言说明
+## 默认工作流
+
+无论从哪个宿主进入，都遵循同一条主线：
+
+1. 自动识别目标项目仓库与开发文档
+2. 分析当前代码进度、偏差和项目匹配性
+3. 在目标仓库根目录创建或刷新 `.helloloop/`
+4. 输出中文执行确认单
+5. 用户确认后，按选中的执行引擎持续推进开发、测试、验收
+6. 每个任务完成后，自动做一次“任务完成复核”
+7. backlog 暂时清空后，自动做一次“主线终态复核”
+
+如果分析发现当前实现已经偏离开发文档，`HelloLoop` 会优先先收口偏差，再继续后面的 backlog。
+
+这意味着：
+
+- 不会因为执行引擎自己一句“已完成”就直接结束
+- 如果只是部分完成，`HelloLoop` 会继续当前主线任务，而不是跳去做模型随口建议的别的事
+- 如果 backlog 清空了，但主线终态复核仍发现文档目标还有缺口，`HelloLoop` 会自动重新分析并继续推进
 
 ## 自动发现与交互逻辑
 
@@ -83,7 +98,7 @@ npx helloloop
 `HelloLoop` 会先快速扫描当前目录：
 
 - 当前目录本身就是项目仓库或开发文档目录时，直接进入分析
-- 当前目录更像“工作区”时，优先尝试使用顶层开发文档，再提示选择候选项目目录
+- 当前目录更像工作区时，优先利用顶层文档，再提示选择候选项目目录
 - 当前目录没有明确开发文档时，不会直接报错，而是先列出：
   - 顶层文档文件
   - 顶层目录
@@ -92,12 +107,12 @@ npx helloloop
 
 ### 2. 项目路径只问一次
 
-对外只有“项目路径”这一个概念，不单独再追问“新项目路径”。
+对外只有“项目路径”这一个概念：
 
-- 你输入已有目录 → 按现有项目继续分析
-- 你输入不存在的目录 → 视为准备创建的新项目目录
+- 输入已有目录 → 按现有项目继续分析
+- 输入不存在的目录 → 视为准备创建的新项目目录
 
-也就是说，用户只需要提供一次项目路径。
+不会再额外追问一个“新项目路径”。
 
 ### 3. 文档和项目缺一不可时会停下询问
 
@@ -107,11 +122,9 @@ npx helloloop
 - 给了项目路径，但无法定位开发文档
 - 同时出现多个冲突的文档路径或项目路径
 
-此时 `HelloLoop` 会暂停，并要求用户补充正确信息。
-
 ### 4. 命令 + 自然语言会一起分析
 
-`HelloLoop` 不依赖固定中文关键词来做硬编码分流。
+`HelloLoop` 不依赖固定中文关键词做硬编码分流。
 
 命令里的：
 
@@ -120,7 +133,7 @@ npx helloloop
 - 英文自然语言
 - 其他语言的补充要求
 
-都会一起进入分析与确认单，不会因为语言不同被静默忽略。
+都会一起进入分析和确认单，不会因为语言不同被静默忽略。
 
 ### 5. 现有项目与文档目标冲突时
 
@@ -136,14 +149,13 @@ npx helloloop
 npx helloloop --rebuild-existing
 ```
 
-重建时会保留必要的仓库元数据和状态目录，例如 `.git`、`.gitignore`、`.gitattributes`、`.helloagents`、`.helloloop`。
-
 ## 执行确认单
 
-真正开始开发前，`HelloLoop` 会先输出中文执行确认单。当前确认单至少包含：
+真正开始开发前，`HelloLoop` 会先输出中文执行确认单，至少包含：
 
 - 路径判断与判断依据
 - 本次命令补充输入
+- 执行引擎
 - 需求语义理解
 - 项目匹配判断
 - 目标仓库
@@ -158,9 +170,16 @@ npx helloloop --rebuild-existing
 
 未确认前，不会正式修改代码。
 
+确认后，默认行为不是“跑一轮就停”，而是：
+
+- 先按 backlog 执行当前颗粒度任务
+- 每个任务完成后复核其验收是否真的闭合
+- backlog 清空后再复核一次整个主线目标
+- 只有“任务验收闭合 + 主线目标闭合 + 验证通过”才算真正结束
+
 ## 安装
 
-### npm / npx
+### 通过 npm / npx
 
 默认安装到 `Codex`：
 
@@ -199,8 +218,6 @@ pwsh -NoLogo -NoProfile -File .\scripts\install-home-plugin.ps1 -CodexHome <CODE
 
 ### 升级、重装、切换分支
 
-如果你已经安装过，但刚拉取了新版本、切换了分支、或想覆盖旧安装，直接重新执行：
-
 ```bash
 npx helloloop install --host codex --force
 npx helloloop install --host all --force
@@ -215,38 +232,34 @@ npx helloloop uninstall --host gemini
 npx helloloop uninstall --host all
 ```
 
-### 安装结果
-
-安装完成后，运行时资产会写入：
-
-- `Codex`：`<CODEX_HOME>/plugins/helloloop`
-- `Claude`：`<CLAUDE_HOME>/plugins/marketplaces/helloloop-local` 与 `plugins/cache/helloloop-local/helloloop/<VERSION>`
-- `Gemini`：`<GEMINI_HOME>/extensions/helloloop`
-
-源码仓库里的 `docs/` 与 `tests/` 不会复制进运行时安装包。
-
 ## 使用入口
+
+### 终端
+
+```bash
+npx helloloop
+npx helloloop <PATH>
+npx helloloop codex <PATH>
+npx helloloop claude <PATH>
+npx helloloop gemini <PATH> <补充说明>
+```
+
+如果已经做了全局安装，也可以把 `npx helloloop` 简写为 `helloloop`。是否立刻可用取决于当前 shell 是否已经刷新 `PATH`。
 
 ### Codex CLI
 
 ```text
 $helloloop
+helloloop:helloloop
 ```
 
-或：
+在 `Codex` 中也可以直接执行：
 
 ```bash
 npx helloloop
-npx helloloop <PATH>
 ```
 
-`$helloloop` 的推荐行为与主命令保持一致：优先进入 `npx helloloop` 主流程，而不是在对话里手工模拟分析和续跑。
-
-如果你显式使用技能名，也可以写：
-
-```text
-helloloop:helloloop
-```
+默认优先当前宿主 `Codex`；如果你在 `Codex` 内显式要求改用 `Claude` / `Gemini`，会先确认再切换。
 
 ### Claude Code / Gemini CLI
 
@@ -256,11 +269,11 @@ helloloop:helloloop
 
 它们会按各自 CLI 的原生 agent 逻辑执行，但共享同一套 `.helloloop/` 工作流规范。
 
-## 命令速查
+## 常用命令
 
 | 命令 | 作用 |
 | --- | --- |
-| `helloloop` / `analyze` | 自动分析、展示确认单，并在确认后继续接续开发 |
+| `helloloop` / `analyze` | 自动分析、展示确认单，并在确认后持续接续开发，直到主线目标闭合或遇到硬阻塞 |
 | `install` | 安装运行时 bundle 到指定宿主 |
 | `uninstall` | 从指定宿主卸载运行时 bundle 与注册信息 |
 | `doctor` | 检查宿主环境、插件资产与目标仓库状态 |
@@ -274,12 +287,13 @@ helloloop:helloloop
 
 | 选项 | 作用 |
 | --- | --- |
+| `codex` / `claude` / `gemini` | 作为 `analyze` 模式的命令首参数，显式指定执行引擎 |
 | `--dry-run` | 只分析并输出确认单，不开始自动执行 |
 | `-y` / `--yes` | 跳过交互确认，分析后直接执行 |
 | `--repo <dir>` | 高级覆盖：显式指定项目仓库 |
 | `--docs <dir|file>` | 高级覆盖：显式指定开发文档 |
 | `--rebuild-existing` | 项目与文档冲突时，自动清理现有项目后重建 |
-| `--host <name>` | 宿主：`codex` / `claude` / `gemini` / `all` |
+| `--host <name>` | 安装宿主：`codex` / `claude` / `gemini` / `all` |
 | `--config-dir <dir>` | 状态目录名，默认 `.helloloop` |
 
 手动控制示例：
@@ -290,7 +304,7 @@ npx helloloop next
 npx helloloop run-once
 ```
 
-## Doctor 检查
+## Doctor
 
 检查默认宿主：
 
@@ -309,11 +323,6 @@ npx helloloop doctor --host all
 ```bash
 npx helloloop doctor --host all --codex-home <CODEX_HOME> --claude-home <CLAUDE_HOME> --gemini-home <GEMINI_HOME>
 ```
-
-`doctor` 的检查范围分两类：
-
-- 在插件源码仓库中运行：主要检查 CLI、bundle 资产和宿主安装资产
-- 在目标项目仓库中运行，或显式传入 `--repo`：还会检查 `.helloloop/backlog.json`、`project.json`、`policy.json`、`verify.yaml`
 
 ## `.helloloop/` 状态目录
 
@@ -352,6 +361,7 @@ npx helloloop doctor --host all --codex-home <CODEX_HOME> --claude-home <CLAUDE_
 - 不吞掉错误
 - 真正执行前先确认
 - 真正结束前先验证
+- 不轻信执行引擎口头“已完成”
 
 ## 仓库结构
 

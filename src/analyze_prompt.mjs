@@ -71,7 +71,7 @@ export function buildAnalysisPrompt({
       "3. `summary.implemented` 写已确认完成的关键能力。",
       "4. `summary.remaining` 写尚未完成的关键缺口。",
       "5. `summary.nextAction` 写最合理的下一步。",
-      "6. `tasks` 总数控制在 4 到 12 个之间，优先覆盖真正剩余工作。",
+      "6. `tasks` 总数控制在 0 到 12 个之间；如果最终目标已经完成且没有剩余缺口，允许输出空数组。",
       "7. 每个任务必须包含：id、title、status、priority、risk、goal、docs、paths、acceptance。",
       "8. `status` 只能是 `done`、`pending`、`blocked`，不要输出 `in_progress` 或 `failed`。",
       "9. `docs` 必须引用本次文档入口中的相关路径；`paths` 必须写当前仓库内的实际目录或文件模式。",
@@ -82,6 +82,7 @@ export function buildAnalysisPrompt({
       "14. 当当前项目目录已存在，但代码结构/产品方向与开发文档目标明显冲突，且更合理的路径是清理后重建时，`repoDecision.compatibility` 设为 `conflict`，`repoDecision.action` 设为 `confirm_rebuild`。",
       "15. 当当前项目目录与开发文档目标一致或可以直接接续时，`repoDecision.compatibility` 设为 `compatible`，`repoDecision.action` 设为 `continue_existing`。",
       "16. 当本次项目目录原本不存在，或文档目标明显是从零开始新建项目时，`repoDecision.action` 可设为 `start_new`。",
+      "17. 只有在文档最终目标、关键能力与验收范围都已闭合时，才能输出空 `tasks`；此时 `summary.remaining` 也必须为空。",
     ].join("\n")),
   ].filter(Boolean).join("\n");
 }

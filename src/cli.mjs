@@ -70,6 +70,8 @@ function parseArgs(argv) {
     else if (arg === "--repo") { options.repoRoot = rest[index + 1]; index += 1; }
     else if (arg === "--docs") { options.docsPath = rest[index + 1]; index += 1; }
     else if (arg === "--host") { options.host = rest[index + 1]; index += 1; }
+    else if (arg === "--engine") { options.engine = rest[index + 1]; options.engineSource = "flag"; index += 1; }
+    else if (arg === "--host-context") { options.hostContext = rest[index + 1]; index += 1; }
     else if (arg === "--codex-home") { options.codexHome = rest[index + 1]; index += 1; }
     else if (arg === "--claude-home") { options.claudeHome = rest[index + 1]; index += 1; }
     else if (arg === "--gemini-home") { options.geminiHome = rest[index + 1]; index += 1; }
@@ -84,7 +86,7 @@ function parseArgs(argv) {
 
 function helpText() {
   return [
-    "用法：helloloop [command] [path|需求说明...] [options]",
+    "用法：helloloop [command] [engine] [path|需求说明...] [options]",
     "",
     "命令：",
     "  analyze               自动分析并生成执行确认单；确认后继续自动接续开发（默认）",
@@ -102,6 +104,7 @@ function helpText() {
     "  --codex-home <dir>    Codex Home，install 默认使用 ~/.codex",
     "  --claude-home <dir>   Claude Home，install 默认使用 ~/.claude",
     "  --gemini-home <dir>   Gemini Home，install 默认使用 ~/.gemini",
+    "  [engine]             analyze 默认支持直接写：codex | claude | gemini",
     "  --repo <dir>          高级选项：显式指定项目仓库根目录",
     "  --docs <dir|file>     高级选项：显式指定开发文档目录或文件",
     "  --config-dir <dir>    配置目录，默认 .helloloop",
@@ -117,8 +120,9 @@ function helpText() {
     "  --constraint <text>   增加一个全局实现约束",
     "",
     "补充说明：",
-    "  analyze 默认支持在命令后混合传入路径和自然语言要求。",
-    "  示例：npx helloloop <DOCS_PATH> <PROJECT_ROOT> 先分析偏差，不要执行",
+    "  analyze 默认支持在命令后混合传入引擎、路径和自然语言要求。",
+    "  如果同时检测到多个可用引擎且没有明确指定，会先询问你选择。",
+    "  示例：npx helloloop claude <DOCS_PATH> <PROJECT_ROOT> 先分析偏差，不要执行",
   ].join("\n");
 }
 
@@ -131,6 +135,9 @@ function renderFollowupExamples() {
     "下一步示例：",
     `npx helloloop`,
     `npx helloloop <PATH>`,
+    `npx helloloop codex`,
+    `npx helloloop claude <PATH>`,
+    `npx helloloop gemini <PATH> 继续完成后续开发`,
     `npx helloloop --dry-run`,
     `npx helloloop install --host all`,
     `npx helloloop uninstall --host all`,
@@ -228,6 +235,12 @@ async function analyzeWithResolvedDiscovery(options) {
         docsPath: currentOptions.docsPath,
         configDirName: currentOptions.configDirName,
         allowNewRepoRoot: currentOptions.allowNewRepoRoot,
+        engine: currentOptions.engine,
+        engineSource: currentOptions.engineSource,
+        engineResolution: currentOptions.engineResolution,
+        hostContext: currentOptions.hostContext,
+        userRequestText: currentOptions.userRequestText,
+        yes: currentOptions.yes,
         selectionSources: currentOptions.selectionSources,
         userIntent: currentOptions.userIntent,
       });
@@ -338,6 +351,13 @@ export async function runCli(argv) {
         return;
       }
 
+      if (result.engineResolution?.ok) {
+        activeOptions = {
+          ...activeOptions,
+          engineResolution: result.engineResolution,
+        };
+      }
+
       const confirmationText = renderAnalyzeConfirmation(
         result.context,
         result.analysis,
@@ -416,7 +436,9 @@ export async function runCli(argv) {
     console.log("开始自动接续执行...");
     const results = await runLoop(result.context, {
       ...activeOptions,
-      maxTasks: resolveAutoRunMaxTasks(result.backlog, activeOptions),
+      engineResolution: result.engineResolution?.ok ? result.engineResolution : activeOptions.engineResolution,
+      maxTasks: resolveAutoRunMaxTasks(result.backlog, activeOptions) || undefined,
+      fullAutoMainline: true,
     });
     const refreshedBacklog = loadBacklog(result.context);
     console.log(renderAutoRunSummary(result.context, refreshedBacklog, results, activeOptions));
