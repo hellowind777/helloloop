@@ -23,7 +23,7 @@ function writeJson(filePath, value) {
 
 function createFakeCodex(binDir) {
   if (process.platform === "win32") {
-    writeText(path.join(binDir, "codex.cmd"), "@echo off\r\necho codex 0.117.0\r\n");
+    writeText(path.join(binDir, "codex.ps1"), "Write-Output 'codex 0.117.0'\r\n");
     return;
   }
 
@@ -44,7 +44,6 @@ test("官方插件入口 help 不再暴露 install-hooks 或 Hook 模式", () =>
   assert.match(result.stdout, /doctor/);
   assert.doesNotMatch(result.stdout, /install-hooks/);
   assert.doesNotMatch(result.stdout, /Hook 模式/);
-  assert.doesNotMatch(result.stdout, /\.autoloop/);
 });
 
 test("npm bin 入口支持 install 命令，把插件安装到指定 Codex Home", () => {
@@ -58,7 +57,7 @@ test("npm bin 入口支持 install 命令，把插件安装到指定 Codex Home"
   try {
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /HelloLoop 已安装到/);
-    assert.match(result.stdout, /npx helloloop doctor --repo <REPO_ROOT>/);
+    assert.match(result.stdout, /npx helloloop next/);
     assert.ok(fs.existsSync(path.join(tempHome, "plugins", "helloloop", ".codex-plugin", "plugin.json")));
     assert.ok(fs.existsSync(path.join(tempHome, ".agents", "plugins", "marketplace.json")));
     assert.ok(!fs.existsSync(path.join(tempHome, "plugins", "helloloop", "docs")));
@@ -68,7 +67,7 @@ test("npm bin 入口支持 install 命令，把插件安装到指定 Codex Home"
   }
 });
 
-test("doctor 只检查纯插件模式前提，不再要求 hooks.json 或 .autoloop\\/project.json", () => {
+test("doctor 只检查纯插件模式前提，不再要求旧目录状态文件", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-cli-surface-"));
   const fakeBin = path.join(tempRoot, "bin");
   const tempRepo = path.join(tempRoot, "repo");
@@ -110,5 +109,4 @@ test("doctor 只检查纯插件模式前提，不再要求 hooks.json 或 .autol
   assert.match(result.stdout, /OK  plugin manifest/);
   assert.match(result.stdout, /OK  plugin skill/);
   assert.doesNotMatch(result.stdout, /hooks\.json/);
-  assert.doesNotMatch(result.stdout, /\.autoloop[\\\/]project\.json/);
 });

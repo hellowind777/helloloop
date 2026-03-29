@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 
 import { ensureDir, nowIso, tailText, writeText } from "./common.mjs";
+import { resolveCodexInvocation, resolveVerifyShellInvocation } from "./shell_invocation.mjs";
 
 function runChild(command, args, options = {}) {
   return new Promise((resolve) => {
@@ -51,130 +52,6 @@ function runChild(command, args, options = {}) {
   });
 }
 
-function quoteForCmd(value) {
-  const normalized = String(value ?? "");
-  if (!normalized.length) {
-    return "\"\"";
-  }
-  if (!/[\s"&<>|^]/.test(normalized)) {
-    return normalized;
-  }
-  return `"${normalized.replace(/"/g, "\"\"")}"`;
-}
-
-function buildCmdCommandLine(executable, args) {
-  return [quoteForCmd(executable), ...args.map((item) => quoteForCmd(item))].join(" ");
-}
-
-function hasCommand(command, platform = process.platform) {
-  if (platform === "win32") {
-    const result = spawnSync("where.exe", [command], {
-      encoding: "utf8",
-      shell: false,
-    });
-    return result.status === 0;
-  }
-
-  const result = spawnSync("sh", ["-lc", `command -v ${command}`], {
-    encoding: "utf8",
-    shell: false,
-  });
-  return result.status === 0;
-}
-
-export function resolveVerifyShellInvocation(options = {}) {
-  const platform = options.platform || process.platform;
-  const commandExists = options.commandExists || ((command) => hasCommand(command, platform));
-
-  if (platform === "win32") {
-    if (commandExists("pwsh")) {
-      return {
-        command: "pwsh",
-        argsPrefix: ["-NoLogo", "-NoProfile", "-Command"],
-        shell: false,
-      };
-    }
-
-    if (commandExists("powershell")) {
-      return {
-        command: "powershell",
-        argsPrefix: ["-NoLogo", "-NoProfile", "-Command"],
-        shell: false,
-      };
-    }
-
-    return {
-      command: "cmd.exe",
-      argsPrefix: ["/d", "/s", "/c"],
-      shell: false,
-    };
-  }
-
-  return {
-    command: "sh",
-    argsPrefix: ["-lc"],
-    shell: false,
-  };
-}
-
-function resolveCodexExecutable(explicitExecutable = "") {
-  if (explicitExecutable) {
-    return explicitExecutable;
-  }
-
-  if (process.platform !== "win32") {
-    return "codex";
-  }
-
-  const candidates = ["codex.cmd", "codex", "codex.ps1"];
-  for (const candidate of candidates) {
-    const result = spawnSync("where.exe", [candidate], {
-      encoding: "utf8",
-      shell: false,
-    });
-    if (result.status !== 0) {
-      continue;
-    }
-
-    const firstLine = String(result.stdout || "")
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find(Boolean);
-    if (firstLine) {
-      return firstLine;
-    }
-  }
-
-  return "codex";
-}
-
-function resolveCodexInvocation(explicitExecutable = "") {
-  const executable = resolveCodexExecutable(explicitExecutable);
-
-  if (process.platform === "win32" && /\.ps1$/i.test(executable)) {
-    return {
-      command: "pwsh",
-      argsPrefix: ["-NoLogo", "-NoProfile", "-File", executable],
-      shell: false,
-    };
-  }
-
-  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(executable)) {
-    return {
-      command: "cmd.exe",
-      argsPrefix: ["/d", "/s", "/c"],
-      executable,
-      shell: false,
-    };
-  }
-
-  return {
-    command: executable,
-    argsPrefix: [],
-    shell: false,
-  };
-}
-
 function writeCodexRunArtifacts(runDir, prefix, result, finalMessage) {
   writeText(path.join(runDir, `${prefix}-stdout.log`), result.stdout);
   writeText(path.join(runDir, `${prefix}-stderr.log`), result.stderr);
@@ -205,7 +82,7 @@ export async function runCodexTask({
   ensureDir(runDir);
 
   const lastMessageFile = path.join(runDir, `${outputPrefix}-last-message.txt`);
-  const invocation = resolveCodexInvocation(executable);
+  const invocation = resolveCodexInvocation({ explicitExecutable: executable });
   const codexArgs = ["exec", "-C", context.repoRoot];
 
   if (model) {
@@ -230,9 +107,19 @@ export async function runCodexTask({
   }
   codexArgs.push("-o", lastMessageFile, "-");
 
-  const args = invocation.executable
-    ? [...invocation.argsPrefix, buildCmdCommandLine(invocation.executable, codexArgs)]
-    : [...invocation.argsPrefix, ...codexArgs];
+  if (invocation.error) {
+    const result = {
+      ok: false,
+      code: 1,
+      stdout: "",
+      stderr: invocation.error,
+    };
+    writeText(path.join(runDir, `${outputPrefix}-prompt.md`), prompt);
+    writeCodexRunArtifacts(runDir, outputPrefix, result, "");
+    return { ...result, finalMessage: "" };
+  }
+
+  const args = [...invocation.argsPrefix, ...codexArgs];
 
   const result = await runChild(invocation.command, args, {
     cwd: context.repoRoot,
@@ -266,6 +153,21 @@ export async function runCodexExec({ context, prompt, runDir, policy }) {
 
 export async function runShellCommand(context, commandLine, runDir, index) {
   const shellInvocation = resolveVerifyShellInvocation();
+  if (shellInvocation.error) {
+    const result = {
+      command: commandLine,
+      ok: false,
+      code: 1,
+      stdout: "",
+      stderr: shellInvocation.error,
+    };
+    const prefix = String(index + 1).padStart(2, "0");
+    writeText(path.join(runDir, `${prefix}-verify-command.txt`), commandLine);
+    writeText(path.join(runDir, `${prefix}-verify-stdout.log`), result.stdout);
+    writeText(path.join(runDir, `${prefix}-verify-stderr.log`), result.stderr);
+    return result;
+  }
+
   const result = await runChild(shellInvocation.command, [
     ...shellInvocation.argsPrefix,
     commandLine,

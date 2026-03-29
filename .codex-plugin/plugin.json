@@ -1,7 +1,7 @@
 {
   "name": "helloloop",
   "version": "0.1.1",
-  "description": "Backlog-driven continuous repository execution for Codex with verification loops and explicit skill and CLI entrypoints.",
+  "description": "面向 Codex 的 backlog 驱动持续开发插件，支持进度分析、验证循环与显式 skill / CLI 入口。",
   "author": {
     "name": "HelloLoop"
   },
@@ -16,8 +16,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "HelloLoop",
-    "shortDescription": "Continuous repo execution with backlog and Ralph Loop guards",
-    "longDescription": "HelloLoop packages backlog-driven continuous development for Codex as an official plugin bundle with explicit skill and CLI entrypoints.",
+    "shortDescription": "基于 backlog 的持续仓库开发与验证循环",
+    "longDescription": "HelloLoop 把基于 backlog 的持续开发能力封装为官方 Codex 插件 bundle，支持自动分析进度、生成后续任务，并通过显式 skill / CLI 入口接续推进。",
     "developerName": "HelloLoop",
     "category": "Coding",
     "capabilities": [
@@ -25,7 +25,7 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Use HelloLoop to inspect backlog state and keep this repo moving with explicit run-loop commands."
+      "使用 HelloLoop 分析当前 backlog 与开发进度，并通过显式命令持续推进这个仓库。"
     ],
     "brandColor": "#0F766E"
   }

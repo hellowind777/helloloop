@@ -1,4 +1,9 @@
 import { formatList } from "./common.mjs";
+import {
+  hasCustomProjectConstraints,
+  listMandatoryGuardrails,
+  resolveProjectConstraints,
+} from "./guardrails.mjs";
 
 function normalizeDocEntry(doc) {
   return String(doc || "").trim().replaceAll("\\", "/");
@@ -63,17 +68,9 @@ export function buildTaskPrompt({
     ...requiredDocs,
     ...(task.docs || []),
   ]);
-
-  const effectiveConstraints = constraints.length
-    ? constraints
-    : [
-        "所有文件修改必须用 apply_patch。",
-        "不得通过压缩代码、删空行、缩短命名来压行数。",
-        "Rust / TS / TSX / Vue / Python / Go 单文件强制拆分上限 400 行。",
-        "新增可见文案必须同时补齐 zh-CN 与 en-US。",
-        "完成后必须同步相关中文文档与联调文档。",
-        "完成前必须主动运行验证，不要停在分析层。",
-      ];
+  const mandatoryGuardrails = listMandatoryGuardrails();
+  const effectiveConstraints = resolveProjectConstraints(constraints);
+  const usingFallbackConstraints = !hasCustomProjectConstraints(constraints);
 
   return [
     "你在本地仓库中执行一个连续开发任务。",
@@ -95,7 +92,8 @@ export function buildTaskPrompt({
     ].join("\n")),
     listSection("涉及路径", task.paths || []),
     listSection("验收条件", task.acceptance || []),
-    listSection("实现约束", effectiveConstraints),
+    listSection("内建安全底线", mandatoryGuardrails),
+    listSection(usingFallbackConstraints ? "默认工程约束（文档未明确时生效）" : "项目/用户约束", effectiveConstraints),
     repoStateText ? section("仓库当前状态", repoStateText) : "",
     failureHistory.length
       ? section("已失败尝试摘要", failureHistory.slice(-4).map((item) => (

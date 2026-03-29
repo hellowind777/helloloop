@@ -1,12 +1,10 @@
 # HelloLoop 安装
 
-本文只说明独立 bundle 的安装方式。
+本文只说明独立插件 bundle 的安装方式，以及安装后的最短使用路径。
 
-## 目录定位
+## 安装目标
 
-当前目录本身就是插件根目录。
-
-安装后的目标位置应为：
+安装完成后，目标目录结构应为：
 
 ```text
 <CODEX_HOME>/
@@ -14,72 +12,88 @@
 └── plugins/
     └── helloloop/
         ├── .codex-plugin/
-        ├── skills/
+        ├── bin/
         ├── scripts/
+        ├── skills/
         ├── src/
         └── templates/
 ```
 
+`docs/` 和 `tests/` 属于源码仓库资料，不会复制进安装后的运行时 bundle。
+
 ## 推荐安装
 
-### 方案 A：通过 npm / npx
+### 方案 A：npm / npx
 
 ```powershell
 npx helloloop install --codex-home <CODEX_HOME>
 ```
 
-这个命令适合直接从 npm 安装，并且后续也可以继续用 `npx helloloop` 执行日常命令。
-
-### 方案 B：从源码仓库安装
+### 方案 B：源码仓库
 
 ```powershell
 node ./scripts/helloloop.mjs install --codex-home <CODEX_HOME>
 ```
 
-如果你在 Windows 上更习惯 PowerShell，也可以使用：
+Windows PowerShell 也可以直接运行：
 
 ```powershell
 pwsh -NoLogo -NoProfile -File .\scripts\install-home-plugin.ps1 -CodexHome <CODEX_HOME>
 ```
 
-如果目标目录已存在，追加 `--force` 或 `-Force` 覆盖：
+如果目标目录已存在，追加 `--force` 或 `-Force` 即可覆盖。
+
+## 安装后怎么用
+
+安装完成后，进入目标项目仓库或开发文档目录，优先直接运行：
 
 ```powershell
-node ./scripts/helloloop.mjs install --codex-home <CODEX_HOME> --force
-pwsh -NoLogo -NoProfile -File .\scripts\install-home-plugin.ps1 -CodexHome <CODEX_HOME> -Force
+npx helloloop
+npx helloloop next
+npx helloloop run-once
 ```
 
-这个脚本会做三件事：
+如果你只知道一个路径，也可以只传一个：
 
-1. 把运行时 bundle 复制到 `<CODEX_HOME>\plugins\helloloop`
-2. 更新 `<CODEX_HOME>\.agents\plugins\marketplace.json`
-3. 不复制 `docs/` 和 `tests/` 这类开发侧文件
+```powershell
+npx helloloop <PATH>
+```
 
-在 Codex 内查看插件时，请使用 `/plugins`（复数），不是 `/plugin`。
+这里的 `<PATH>` 可以是项目路径，也可以是开发文档目录或文件。
 
-npm 只是分发方式，不是 Codex 的直接插件源；Codex 当前仍通过本地 marketplace 条目 `./plugins/helloloop` 加载插件。
+只有在自动发现无法确定仓库或文档时，再补充高级参数：
 
-当前 npm 包名使用 `helloloop`。
+```powershell
+npx helloloop --repo <REPO_ROOT> --docs <DOCS_PATH>
+```
+
+如果已经做了全局安装，也可以把 `npx helloloop` 简写成 `helloloop`。
+
+## Windows 说明
+
+- `HelloLoop` 在 Windows 只使用 `pwsh` 或 `powershell` 执行验证和脚本，不会回退到 `cmd.exe`。
+- 如果你的环境缺少这两个 PowerShell 入口，`HelloLoop` 会直接停止并提示修复环境。
+- 这样做是为了避免路径转义、嵌套命令和危险文件操作在 Windows 上被错误展开。
+
+## 在 Codex 里执行
+
+`npx helloloop ...` 可以直接在当前 Codex 会话里执行，不需要重开终端。
+
+`helloloop ...` 这种短命令是否立即可用，取决于你的全局安装方式和当前 shell 是否已经刷新 PATH。
 
 ## 手动安装
 
 ### 1. 复制插件目录
 
-把当前目录整体复制到：
+把当前目录复制到：
 
 ```text
-<CODEX_HOME>\plugins\helloloop
+<CODEX_HOME>/plugins/helloloop
 ```
 
 ### 2. 更新 marketplace
 
-在：
-
-```text
-<CODEX_HOME>\.agents\plugins\marketplace.json
-```
-
-确保存在如下条目：
+在 `<CODEX_HOME>/.agents/plugins/marketplace.json` 中确保存在如下条目：
 
 ```json
 {
@@ -96,28 +110,12 @@ npm 只是分发方式，不是 Codex 的直接插件源；Codex 当前仍通过
 }
 ```
 
-## 运行方式
+## 状态目录位置
 
-安装完成后，针对目标仓库执行：
-
-```powershell
-npx helloloop doctor --repo <REPO_ROOT>
-npx helloloop init --repo <REPO_ROOT>
-npx helloloop run-loop --repo <REPO_ROOT>
-```
-
-如果已经全局安装 `helloloop`，也可以直接写成：
-
-```powershell
-helloloop doctor --repo <REPO_ROOT>
-helloloop init --repo <REPO_ROOT>
-helloloop run-loop --repo <REPO_ROOT>
-```
-
-`HelloLoop` 的 backlog 状态目录始终写入目标仓库的：
+`HelloLoop` 的 backlog 与运行状态始终写入目标仓库根目录下的：
 
 ```text
 .helloloop/
 ```
 
-而不是写回插件目录自身。
+不会写回插件目录自身。

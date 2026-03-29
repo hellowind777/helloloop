@@ -1,70 +1,55 @@
 # HelloLoop
 
-`HelloLoop` 是一个面向 Codex 的独立插件，用来把“按 backlog 持续推进仓库开发”这件事标准化、可追踪、可验证地跑起来。
+`HelloLoop` 是一个面向 Codex 的独立插件，用来把“根据开发文档接续推进仓库开发”这件事标准化、可追踪、可验证地跑起来。
 
-它不只是在单轮对话里改一段代码，而是把任务队列、必读文档、执行约束、验证命令和运行记录统一放进目标仓库的 `.helloloop/` 目录，让 Codex 可以按明确流程持续接续开发。
+它会先分析当前仓库真实代码与开发文档之间的差距，再把后续任务、运行状态、执行记录统一写入目标仓库根目录的 `.helloloop/`，让 Codex 能持续接着做，而不是每轮都重新交代背景。
 
 命令入口按 `Node.js 20+` 设计，支持 Windows、macOS 和 Linux。
 
 ## 目录
 
-- [HelloLoop 是什么](#helloloop-是什么)
-- [核心能力](#核心能力)
-- [适用场景](#适用场景)
+- [核心定位](#核心定位)
 - [安装](#安装)
 - [快速开始](#快速开始)
+- [路径规则](#路径规则)
 - [命令速查](#命令速查)
 - [状态目录](#状态目录)
-- [工作机制](#工作机制)
+- [在 Codex 中使用](#在-codex-中使用)
 - [仓库结构](#仓库结构)
 - [相关文档](#相关文档)
 
-## HelloLoop 是什么
+## 核心定位
 
-`HelloLoop` 解决的是以下问题：
+`HelloLoop` 适合这样的场景：
 
-- 你的仓库里已经有开发文档、任务拆解或 backlog
-- 你希望 Codex 能按顺序接着做，而不是每次都从头解释背景
-- 你希望每一轮执行前都自动带上项目状态、必读文档和实现约束
-- 你希望每次运行后都留下状态记录、验证结果和运行痕迹
+- 仓库里已经有 `docs/`、方案包、任务文档或阶段说明
+- 代码已经做了一部分，需要先判断“现在做到哪里了”
+- 你希望自动生成足够细的后续 backlog，而不是得到一句“继续开发”
+- 你希望后续每轮执行都带着状态、约束、文档和验证命令继续推进
+- 你希望在开发文档约束不完整时，仍然有一层稳定、安全的执行底线
 
-围绕这个目标，`HelloLoop` 提供了一套明确的仓库内执行模型：
+围绕这个目标，`HelloLoop` 做四件事：
 
-1. 从 backlog 中选择当前可执行任务
-2. 汇总项目上下文、任务目标和约束
-3. 生成面向 Codex 的执行提示
-4. 调用 Codex 完成实现
-5. 执行验证命令
-6. 回写状态、日志和运行记录
+1. 自动发现项目仓库与开发文档
+2. 对比当前代码和文档目标，判断真实进度
+3. 生成或刷新 `.helloloop/backlog.json`
+4. 驱动 Codex 按 backlog 接续执行并留下运行记录
 
-## 核心能力
+同时，`HelloLoop` 自带一层内建安全底线：
 
-- **插件安装**：安装到 Codex Home，作为独立插件使用
-- **仓库初始化**：在目标仓库生成 `.helloloop/` 状态目录
-- **任务调度**：基于优先级、依赖、风险等级挑选下一任务
-- **干跑预览**：先看下一任务、提示词和验证命令，再决定是否执行
-- **单轮执行**：执行一个任务并回写结果
-- **循环执行**：连续执行多个任务，直到完成、阻塞或达到上限
-- **验证联动**：优先使用任务级验证命令，缺省时读取仓库验证配置
-- **运行留痕**：把提示词、stdout、stderr、验证输出沉淀到 `runs/`
-
-## 适用场景
-
-- 你有一套开发文档，希望 Codex 接续完成后续开发
-- 你有清晰 backlog，希望 AI 按队列逐项推进
-- 你希望把“任务、约束、验证、结果”都放在仓库里长期维护
-- 你希望执行失败后不是停住，而是能按既定策略继续推进
-- 你希望多人协作时，每个人都能快速看懂当前任务状态
+- 开发文档缺少必要约束时，自动补上默认工程约束
+- Windows 端只使用 `pwsh` / `powershell`，不回退到 `cmd`
+- 所有流程都要求避免静默失败、危险命令和隐私信息泄露
 
 ## 安装
 
-### 通过 npm / npx 安装
+### npm / npx
 
 ```powershell
 npx helloloop install --codex-home <CODEX_HOME>
 ```
 
-### 从源码仓库安装
+### 源码仓库
 
 ```powershell
 node ./scripts/helloloop.mjs install --codex-home <CODEX_HOME>
@@ -76,17 +61,7 @@ node ./scripts/helloloop.mjs install --codex-home <CODEX_HOME>
 pwsh -NoLogo -NoProfile -File .\scripts\install-home-plugin.ps1 -CodexHome <CODEX_HOME>
 ```
 
-安装完成后，插件会被放到：
-
-```text
-<CODEX_HOME>\plugins\helloloop
-```
-
-同时会更新：
-
-```text
-<CODEX_HOME>\.agents\plugins\marketplace.json
-```
+安装完成后，插件会复制到 `<CODEX_HOME>/plugins/helloloop`，并更新 `<CODEX_HOME>/.agents/plugins/marketplace.json`。
 
 ## 快速开始
 
@@ -96,68 +71,105 @@ pwsh -NoLogo -NoProfile -File .\scripts\install-home-plugin.ps1 -CodexHome <CODE
 npx helloloop install --codex-home <CODEX_HOME>
 ```
 
-之后的日常命令推荐直接使用：
+### 2. 进入目标项目或开发文档目录
+
+最短命令就是：
 
 ```powershell
-npx helloloop <command> [options]
+npx helloloop
 ```
 
-如果你已经全局安装过：
+默认规则如下：
+
+- 当前目录是项目仓库根目录时：自动查找开发文档并分析当前进度
+- 当前目录本身是开发文档目录时：优先尝试反推目标仓库
+- 分析完成后：自动生成或刷新目标仓库根目录下的 `.helloloop/`
+
+如果你只知道一个路径，也可以只传一个位置：
 
 ```powershell
-helloloop <command> [options]
+npx helloloop <PATH>
 ```
 
-在 Codex 当前会话里，也可以直接运行同样的 `npx helloloop ...` 命令，不需要重开终端。
+这里的 `<PATH>` 只能传一个，可以是：
 
-### 2. 在目标仓库初始化 `.helloloop/`
+- 项目仓库路径
+- 开发文档目录
+- 开发文档文件
+
+### 3. 查看下一任务
 
 ```powershell
-npx helloloop init --repo <REPO_ROOT>
+npx helloloop next
 ```
 
-初始化完成后，模板会落在目标仓库根目录下的 `.helloloop/`，而不是插件目录本身。
-
-### 3. 检查运行条件
+### 4. 执行一次或连续执行
 
 ```powershell
-npx helloloop doctor --repo <REPO_ROOT>
+npx helloloop run-once
+npx helloloop run-loop --max-tasks 2
 ```
 
-### 4. 查看状态与下一任务
+如果你已经做了全局安装，也可以把 `npx helloloop` 简写成 `helloloop`。
+
+## 路径规则
+
+- 不传路径：默认分析当前目录
+- 只传一个路径：自动判断它是仓库路径还是开发文档路径
+- 已给开发文档但无法确定仓库：停止并提示补充 `--repo`
+- 已给仓库但找不到开发文档：停止并提示补充 `--docs`
+- `--repo` 和 `--docs` 是高级覆盖选项，不是主工作流
+
+推荐优先使用：
 
 ```powershell
-npx helloloop status --repo <REPO_ROOT>
-npx helloloop next --repo <REPO_ROOT>
+npx helloloop
+npx helloloop <PATH>
 ```
 
-### 5. 执行一个任务或连续执行
+只有在自动发现无法收敛时，再显式补充：
 
 ```powershell
-npx helloloop run-once --repo <REPO_ROOT>
-npx helloloop run-loop --repo <REPO_ROOT> --max-tasks 2
+npx helloloop --repo <REPO_ROOT> --docs <DOCS_PATH>
 ```
+
+## 安全底线
+
+- `HelloLoop` 会始终附加一组内建安全底线，覆盖 shell 安全、EHRB 命令阻断、跨平台兼容和静默失败防护。
+- 如果项目开发文档或 `.helloloop/project.json` 已有明确约束，则优先使用项目约束；内建安全底线继续作为最低边界。
+- 如果项目没有给出必要约束，则自动启用默认工程约束，例如代码是事实源、体积控制、验证必须执行、阻塞必须明确说明。
+- Windows 环境下，`HelloLoop` 只允许 `pwsh` 或 `powershell`；如果两者都不可用，会直接停止，而不是回退到 `cmd.exe`。
 
 ## 命令速查
 
 | 命令 | 作用 |
 | --- | --- |
-| `install` | 安装插件到 Codex Home，并更新插件 marketplace |
-| `init` | 初始化目标仓库的 `.helloloop/` |
-| `doctor` | 检查 Codex、插件文件和目标仓库配置是否齐备 |
-| `status` | 查看 backlog 汇总、当前状态和下一任务 |
-| `next` | 生成下一任务预览，不真正调用 Codex |
+| `analyze` | 自动发现仓库与开发文档，分析进度并刷新 `.helloloop/` |
+| `next` | 预览下一任务，不真正执行 |
 | `run-once` | 执行一个任务 |
 | `run-loop` | 连续执行多个任务 |
+| `status` | 查看 backlog 汇总与当前状态 |
+| `doctor` | 检查 Codex、插件 bundle 与目标仓库是否满足运行条件 |
+| `init` | 手动初始化 `.helloloop/` 模板 |
+| `install` | 安装插件到 Codex Home |
+
+除 `install` 外，其余命令都可以直接在目标仓库目录执行；如果不在目标仓库目录，也可以补一个路径：
+
+```powershell
+npx helloloop next <PATH>
+npx helloloop run-once <PATH>
+npx helloloop status <PATH>
+```
 
 ### 常用选项
 
 | 选项 | 说明 |
 | --- | --- |
-| `--repo <dir>` | 目标仓库根目录，默认当前目录 |
+| `--repo <dir>` | 高级选项：显式指定项目仓库根目录 |
+| `--docs <dir\|file>` | 高级选项：显式指定开发文档目录或文件 |
 | `--codex-home <dir>` | 指定 Codex Home |
 | `--config-dir <dir>` | 指定状态目录名，默认 `.helloloop` |
-| `--dry-run` | 只生成提示词和预览，不真正调用 Codex |
+| `--dry-run` | 只生成提示和预览，不真正调用 Codex |
 | `--task-id <id>` | 指定执行某个任务 |
 | `--max-tasks <n>` | `run-loop` 最多执行的任务数 |
 | `--max-attempts <n>` | 每种策略的最大重试次数 |
@@ -177,7 +189,7 @@ helloloop:helloloop
 
 ## 状态目录
 
-`HelloLoop` 默认在目标仓库根目录创建 `.helloloop/`，用来保存 backlog、策略配置、运行状态和执行留痕。
+`HelloLoop` 默认在目标仓库根目录创建 `.helloloop/`，而不是写回插件目录自身。
 
 典型结构如下：
 
@@ -191,50 +203,22 @@ helloloop:helloloop
 └── runs/
 ```
 
-各文件作用如下：
+各文件职责如下：
 
-- `backlog.json`：任务列表、优先级、风险、依赖、验收条件
-- `policy.json`：循环上限、重试策略、Codex 执行参数
-- `project.json`：全局必读文档、实现约束、任务规划提示
+- `backlog.json`：接续开发任务列表
+- `policy.json`：循环上限、重试策略和 Codex 参数
+- `project.json`：开发文档入口和全局约束
 - `status.json`：最近一次运行的机器可读状态
 - `STATE.md`：面向人的当前进展摘要
-- `runs/`：每次执行的提示词、日志和验证输出
+- `runs/`：提示词、stdout、stderr、验证输出等运行留痕
 
-## 工作机制
+## 在 Codex 中使用
 
-### 任务模型
+可以。
 
-`backlog.json` 中的任务通常包含以下字段：
-
-- `id`：任务唯一标识
-- `title`：任务标题
-- `status`：`pending`、`in_progress`、`done`、`failed`、`blocked`
-- `priority`：`P0` 到 `P3`
-- `risk`：`low`、`medium`、`high`、`critical`
-- `goal`：本任务要达成的目标
-- `docs`：执行前必须阅读的文档
-- `paths`：本任务主要涉及的目录
-- `acceptance`：验收条件
-- `dependsOn`：依赖的上游任务
-- `verify`：任务专属验证命令
-
-### 执行流程
-
-`HelloLoop` 在每一轮执行中会完成这些事情：
-
-1. 找出当前可执行任务
-2. 读取仓库状态、任务描述和必读文档
-3. 生成清晰的 Codex 执行提示
-4. 运行 Codex 完成开发
-5. 执行验证命令
-6. 更新任务状态和运行记录
-
-### 风险控制
-
-- 默认优先自动执行 `low` 风险任务
-- 较高风险任务需要显式允许
-- 存在未完成依赖时，任务不会被挑选执行
-- 存在未收束的执行状态时，循环会停止并等待处理
+- 在当前 Codex 会话里，直接运行 `npx helloloop ...` 即可，不需要重开终端
+- 如果你使用的是全局安装后的 `helloloop` 短命令，是否需要新终端取决于你的 shell 是否已经刷新 PATH
+- `HelloLoop` 负责组织分析、backlog 和执行流程，真正的代码分析与开发仍然通过本机 `codex` CLI 完成
 
 ## 仓库结构
 
@@ -252,12 +236,12 @@ helloloop/
 
 其中：
 
-- `src/` 用来放 `HelloLoop` 的实际实现逻辑，例如任务选择、状态加载、执行流程、提示词生成和安装流程
-- `tests/` 用来做回归验证，确保 CLI、模板、插件 bundle 和执行流程没有被改坏
+- `src/` 放 `HelloLoop` 的实际实现逻辑，例如路径发现、分析提示词生成、运行调度和安装流程
+- `tests/` 放回归测试，确保 CLI、安装链路、bundle 结构和分析流程没有被改坏
 - `templates/` 是初始化目标仓库时写入 `.helloloop/` 的模板来源
 
 ## 相关文档
 
-- `docs/README.md`：插件 bundle 结构补充说明
-- `docs/install.md`：安装说明
-- `docs/plugin-standard.md`：官方插件结构与标准对照
+- `docs/install.md`：安装与日常使用方式
+- `docs/README.md`：插件 bundle 结构说明
+- `docs/plugin-standard.md`：官方插件结构与当前实现映射

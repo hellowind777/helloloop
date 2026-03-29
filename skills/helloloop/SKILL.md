@@ -1,51 +1,55 @@
 ---
 name: helloloop
-description: Use when the user wants Codex to keep shipping repo work across turns, bootstrap HelloLoop, or inspect backlog-driven execution state through the pure official plugin bundle.
+description: 当用户希望 Codex 先分析仓库当前进度，再生成 backlog 并按队列持续接续开发时使用。
 ---
 
 # HelloLoop
 
-Use this plugin when the task is continuous repository execution rather than a single chat-turn change.
+当任务目标不是单轮对话里改一点代码，而是要基于开发文档持续推进整个仓库时，使用这个插件。
 
-## Official Plugin Boundary
+## 插件边界
 
-- This bundle root is the official plugin surface for HelloLoop.
-- It ships standard Codex plugin metadata through `.codex-plugin/plugin.json` and a plugin skill through `skills/`.
-- This plugin is designed around explicit skill and CLI entrypoints.
+- 当前 bundle 根目录就是 `HelloLoop` 的官方插件目录。
+- 插件元数据位于 `.codex-plugin/plugin.json`，执行逻辑位于 `skills/`、`bin/`、`scripts/`、`src/`、`templates/`。
+- 运行状态统一写入目标仓库根目录下的 `.helloloop/`。
 
-## Setup
+## 使用前准备
 
-1. Install with `npx helloloop install --codex-home <CODEX_HOME>` or use `scripts/install-home-plugin.ps1`.
-2. From the target repository, run `npx helloloop doctor --repo <repo-root>`.
-3. From the target repository, run `npx helloloop init --repo <repo-root>`.
+1. 先通过 `npx helloloop install --codex-home <CODEX_HOME>` 或 `scripts/install-home-plugin.ps1` 安装插件。
+2. 打开目标项目仓库目录，或者打开开发文档所在目录。
+3. 运行 `npx helloloop` 或 `npx helloloop <path>`。
+4. 如果无法自动判断仓库路径或开发文档路径，就停下来提示用户补充；`--repo` 和 `--docs` 只作为显式覆盖选项使用。
 
-## Operating Model
+## 工作模式
 
-- `.helloloop/` is the default CLI and backlog state directory.
-- The installed plugin bundle keeps runtime files such as `src/`, `templates/`, `bin/`, `scripts/`, and `skills/`.
-- Source-only materials such as `docs/` and `tests/` stay in the development repository.
+- 代码是事实源，开发文档是目标源。
+- `HelloLoop` 会先分析当前真实进度，再生成或刷新 `.helloloop/backlog.json`。
+- 后续开发通过 `next`、`run-once`、`run-loop` 按 backlog 接续推进。
+- 真正的代码分析与实现仍由本机 `codex` CLI 完成。
 
-## Invocation
+## 核心命令
 
-- In official Codex plugin mode, plugin skills are namespaced with `plugin_name:`.
-- For this plugin, the unambiguous skill name is `helloloop:helloloop`.
-- Explicitly naming the `helloloop` plugin should also bias Codex toward this skill.
-- Do not promise bare `$helloloop` is the official invocation form.
+- `npx helloloop`
+- `npx helloloop <path>`
+- `npx helloloop next`
+- `npx helloloop run-once`
+- `npx helloloop run-loop --max-tasks <n>`
 
-## Primary Commands
+## 高级命令
 
-- `npx helloloop status --repo <repo-root>`
-- `npx helloloop next --repo <repo-root>`
-- `npx helloloop run-once --repo <repo-root>`
-- `npx helloloop run-loop --repo <repo-root>`
+- `npx helloloop status`
+- `npx helloloop doctor`
+- `npx helloloop init`
+- `npx helloloop --repo <repo-root> --docs <docs-path>`
 
-## Reporting Rules
+## 调用方式
 
-- State explicitly that the plugin runs in pure official plugin mode.
-- Keep Ralph Loop guardrails and repo verification intact.
+- 在官方 Codex 插件模式下，明确的 skill 名称是 `helloloop:helloloop`。
+- 在对话里显式提到 `helloloop` 插件，也会帮助 Codex 更准确地命中这个 skill。
 
-## Docs
+## 参考文档
 
-- Source repo main guide: `docs/README.md`
-- Source repo installation note: `docs/install.md`
-- Source repo official standard and runtime boundary: `docs/plugin-standard.md`
+- 主说明：`README.md`
+- 安装说明：`docs/install.md`
+- Bundle 说明：`docs/README.md`
+- 插件标准映射：`docs/plugin-standard.md`

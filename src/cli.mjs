@@ -3,14 +3,36 @@ import { spawnSync } from "node:child_process";
 
 import { createContext } from "./context.mjs";
 import { fileExists } from "./common.mjs";
+import { analyzeWorkspace } from "./analyzer.mjs";
 import { scaffoldIfMissing } from "./config.mjs";
+import { resolveRepoRoot } from "./discovery.mjs";
 import { installPluginBundle } from "./install.mjs";
 import { runLoop, runOnce, renderStatusText } from "./runner.mjs";
 
 const REPO_ROOT_PLACEHOLDER = "<REPO_ROOT>";
+const DOCS_PATH_PLACEHOLDER = "<DOCS_PATH>";
+const KNOWN_COMMANDS = new Set([
+  "analyze",
+  "install",
+  "init",
+  "status",
+  "next",
+  "run-once",
+  "run-loop",
+  "doctor",
+  "help",
+  "--help",
+  "-h",
+]);
 
 function parseArgs(argv) {
-  const [command = "status", ...rest] = argv;
+  const [first = "", ...restArgs] = argv;
+  const command = !first
+    ? "analyze"
+    : (KNOWN_COMMANDS.has(first) ? first : "analyze");
+  const rest = !first
+    ? []
+    : (KNOWN_COMMANDS.has(first) ? restArgs : argv);
   const options = {
     requiredDocs: [],
     constraints: [],
@@ -26,10 +48,12 @@ function parseArgs(argv) {
     else if (arg === "--max-attempts") { options.maxAttempts = Number(rest[index + 1]); index += 1; }
     else if (arg === "--max-strategies") { options.maxStrategies = Number(rest[index + 1]); index += 1; }
     else if (arg === "--repo") { options.repoRoot = rest[index + 1]; index += 1; }
+    else if (arg === "--docs") { options.docsPath = rest[index + 1]; index += 1; }
     else if (arg === "--codex-home") { options.codexHome = rest[index + 1]; index += 1; }
     else if (arg === "--config-dir") { options.configDirName = rest[index + 1]; index += 1; }
     else if (arg === "--required-doc") { options.requiredDocs.push(rest[index + 1]); index += 1; }
     else if (arg === "--constraint") { options.constraints.push(rest[index + 1]); index += 1; }
+    else if (!options.inputPath) { options.inputPath = arg; }
     else {
       throw new Error(`未知参数：${arg}`);
     }
@@ -40,9 +64,10 @@ function parseArgs(argv) {
 
 function helpText() {
   return [
-    "用法：helloloop <command> [options]",
+    "用法：helloloop [command] [path] [options]",
     "",
     "命令：",
+    "  analyze               自动发现仓库与开发文档，分析当前进度并生成/刷新 .helloloop（默认）",
     "  install               安装插件到 Codex Home（适合 npx / npm bin 分发）",
     "  init                  初始化 .helloloop 配置",
     "  status                查看 backlog 与下一任务",
@@ -53,7 +78,8 @@ function helpText() {
     "",
     "选项：",
     "  --codex-home <dir>    Codex Home，install 默认使用 ~/.codex",
-    "  --repo <dir>          目标仓库根目录，默认当前目录",
+    "  --repo <dir>          高级选项：显式指定项目仓库根目录",
+    "  --docs <dir|file>     高级选项：显式指定开发文档目录或文件",
     "  --config-dir <dir>    配置目录，默认 .helloloop",
     "  --dry-run             只生成提示与预览，不真正调用 codex",
     "  --task-id <id>        指定任务 id",
@@ -73,8 +99,9 @@ function printHelp() {
 function renderFollowupExamples() {
   return [
     "下一步示例：",
-    `npx helloloop doctor --repo ${REPO_ROOT_PLACEHOLDER}`,
-    `如已全局安装，也可直接运行：helloloop doctor --repo ${REPO_ROOT_PLACEHOLDER}`,
+    `npx helloloop`,
+    `npx helloloop next`,
+    `如需显式补充路径：npx helloloop --repo ${REPO_ROOT_PLACEHOLDER} --docs ${DOCS_PATH_PLACEHOLDER}`,
   ].join("\n");
 }
 
@@ -159,6 +186,23 @@ async function runDoctor(context) {
   }
 }
 
+function resolveContextFromOptions(options) {
+  const resolvedRepo = resolveRepoRoot({
+    cwd: process.cwd(),
+    repoRoot: options.repoRoot,
+    inputPath: options.inputPath,
+  });
+
+  if (!resolvedRepo.ok) {
+    throw new Error(resolvedRepo.message);
+  }
+
+  return createContext({
+    repoRoot: resolvedRepo.repoRoot,
+    configDirName: options.configDirName,
+  });
+}
+
 export async function runCli(argv) {
   const { command, options } = parseArgs(argv);
 
@@ -167,12 +211,11 @@ export async function runCli(argv) {
     return;
   }
 
-  const context = createContext({
-    repoRoot: options.repoRoot,
-    configDirName: options.configDirName,
-  });
-
   if (command === "install") {
+    const context = createContext({
+      repoRoot: options.repoRoot,
+      configDirName: options.configDirName,
+    });
     const result = installPluginBundle({
       bundleRoot: context.bundleRoot,
       codexHome: options.codexHome,
@@ -184,6 +227,27 @@ export async function runCli(argv) {
     console.log(renderFollowupExamples());
     return;
   }
+
+  if (command === "analyze") {
+    const result = await analyzeWorkspace({
+      cwd: process.cwd(),
+      inputPath: options.inputPath,
+      repoRoot: options.repoRoot,
+      docsPath: options.docsPath,
+      configDirName: options.configDirName,
+    });
+
+    if (!result.ok) {
+      console.error(result.summary);
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log(result.summary);
+    return;
+  }
+
+  const context = resolveContextFromOptions(options);
 
   if (command === "init") {
     const created = scaffoldIfMissing(context);

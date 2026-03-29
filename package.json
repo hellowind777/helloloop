@@ -1,7 +1,7 @@
 {
   "name": "helloloop",
   "version": "0.1.1",
-  "description": "Standalone Codex plugin bundle for backlog-driven repository execution with Ralph Loop guards",
+  "description": "面向 Codex 的独立插件 bundle，用于基于 backlog 持续推进仓库开发并执行验证循环",
   "type": "module",
   "repository": {
     "type": "git",
@@ -24,7 +24,7 @@
     "templates"
   ],
   "scripts": {
-    "test": "node --test tests/cli_surface.test.mjs tests/install_script.test.mjs tests/process_shell.test.mjs tests/ralph_loop.test.mjs tests/plugin_bundle.test.mjs"
+    "test": "node --test tests/analyze_cli.test.mjs tests/cli_surface.test.mjs tests/install_script.test.mjs tests/process_shell.test.mjs tests/prompt_guardrails.test.mjs tests/ralph_loop.test.mjs tests/plugin_bundle.test.mjs"
   },
   "engines": {
     "node": ">=20"
