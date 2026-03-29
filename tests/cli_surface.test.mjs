@@ -153,6 +153,138 @@ test("install --host all 会同时安装 Codex、Claude 和 Gemini 宿主资产"
   }
 });
 
+test("uninstall --host all 会移除 Codex、Claude 和 Gemini 的安装痕迹与注册信息", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-cli-uninstall-all-"));
+  const codexHome = path.join(tempRoot, "codex-home");
+  const claudeHome = path.join(tempRoot, "claude-home");
+  const geminiHome = path.join(tempRoot, "gemini-home");
+
+  const installResult = spawnSync("node", [
+    npmBinEntry,
+    "install",
+    "--host",
+    "all",
+    "--codex-home",
+    codexHome,
+    "--claude-home",
+    claudeHome,
+    "--gemini-home",
+    geminiHome,
+  ], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+  assert.equal(installResult.status, 0, installResult.stderr);
+
+  const result = spawnSync("node", [
+    npmBinEntry,
+    "uninstall",
+    "--host",
+    "all",
+    "--codex-home",
+    codexHome,
+    "--claude-home",
+    claudeHome,
+    "--gemini-home",
+    geminiHome,
+  ], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+  try {
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /HelloLoop 已从以下宿主卸载/);
+    assert.ok(!fs.existsSync(path.join(codexHome, "plugins", "helloloop")));
+    assert.ok(!fs.existsSync(path.join(geminiHome, "extensions", "helloloop")));
+    assert.ok(!fs.existsSync(path.join(claudeHome, "plugins", "marketplaces", "helloloop-local")));
+    assert.ok(!fs.existsSync(path.join(claudeHome, "plugins", "cache", "helloloop-local")));
+
+    const codexMarketplace = JSON.parse(fs.readFileSync(path.join(codexHome, ".agents", "plugins", "marketplace.json"), "utf8"));
+    assert.equal(codexMarketplace.plugins.some((plugin) => plugin?.name === "helloloop"), false);
+
+    const claudeSettings = JSON.parse(fs.readFileSync(path.join(claudeHome, "settings.json"), "utf8"));
+    assert.equal(Boolean(claudeSettings.enabledPlugins?.["helloloop@helloloop-local"]), false);
+    assert.equal(Boolean(claudeSettings.extraKnownMarketplaces?.["helloloop-local"]), false);
+
+    const knownMarketplaces = JSON.parse(fs.readFileSync(path.join(claudeHome, "plugins", "known_marketplaces.json"), "utf8"));
+    assert.equal(Boolean(knownMarketplaces["helloloop-local"]), false);
+
+    const installedPlugins = JSON.parse(fs.readFileSync(path.join(claudeHome, "plugins", "installed_plugins.json"), "utf8"));
+    assert.equal(Boolean(installedPlugins.plugins?.["helloloop@helloloop-local"]), false);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("install --host all --force 会清理旧分支残留后重装最新运行时资产", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-cli-reinstall-all-"));
+  const codexHome = path.join(tempRoot, "codex-home");
+  const claudeHome = path.join(tempRoot, "claude-home");
+  const geminiHome = path.join(tempRoot, "gemini-home");
+
+  const firstInstall = spawnSync("node", [
+    npmBinEntry,
+    "install",
+    "--host",
+    "all",
+    "--codex-home",
+    codexHome,
+    "--claude-home",
+    claudeHome,
+    "--gemini-home",
+    geminiHome,
+  ], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+  assert.equal(firstInstall.status, 0, firstInstall.stderr);
+
+  writeText(path.join(codexHome, "plugins", "helloloop", "STALE.txt"), "old branch\n");
+  writeText(path.join(claudeHome, "plugins", "marketplaces", "helloloop-local", "STALE.txt"), "old branch\n");
+  writeText(path.join(geminiHome, "extensions", "helloloop", "STALE.txt"), "old branch\n");
+
+  const result = spawnSync("node", [
+    npmBinEntry,
+    "install",
+    "--host",
+    "all",
+    "--codex-home",
+    codexHome,
+    "--claude-home",
+    claudeHome,
+    "--gemini-home",
+    geminiHome,
+    "--force",
+  ], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+  try {
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(!fs.existsSync(path.join(codexHome, "plugins", "helloloop", "STALE.txt")));
+    assert.ok(!fs.existsSync(path.join(claudeHome, "plugins", "marketplaces", "helloloop-local", "STALE.txt")));
+    assert.ok(!fs.existsSync(path.join(geminiHome, "extensions", "helloloop", "STALE.txt")));
+    assert.ok(fs.existsSync(path.join(codexHome, "plugins", "helloloop", ".codex-plugin", "plugin.json")));
+    assert.ok(fs.existsSync(path.join(
+      claudeHome,
+      "plugins",
+      "cache",
+      "helloloop-local",
+      "helloloop",
+      packageVersion,
+      ".claude-plugin",
+      "plugin.json",
+    )));
+    assert.ok(fs.existsSync(path.join(geminiHome, "extensions", "helloloop", "gemini-extension.json")));
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("doctor 只检查纯插件模式前提，不再要求旧目录状态文件", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-cli-surface-"));
   const fakeBin = path.join(tempRoot, "bin");
@@ -195,6 +327,50 @@ test("doctor 只检查纯插件模式前提，不再要求旧目录状态文件"
   assert.match(result.stdout, /OK  plugin manifest/);
   assert.match(result.stdout, /OK  plugin skill/);
   assert.doesNotMatch(result.stdout, /hooks\.json/);
+});
+
+test("doctor 在插件源码仓库中默认只检查宿主与插件资产，不强制要求目标项目状态目录", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-cli-doctor-plugin-root-"));
+  const fakeBin = path.join(tempRoot, "bin");
+  const codexHome = path.join(tempRoot, "codex-home");
+
+  createFakeCodex(fakeBin);
+
+  const installResult = spawnSync("node", [
+    npmBinEntry,
+    "install",
+    "--codex-home",
+    codexHome,
+  ], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  assert.equal(installResult.status, 0, installResult.stderr);
+
+  const result = spawnSync("node", [
+    pluginEntry,
+    "doctor",
+    "--codex-home",
+    codexHome,
+  ], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: [fakeBin, process.env.PATH || ""].join(path.delimiter),
+    },
+  });
+
+  try {
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /OK  codex CLI/);
+    assert.match(result.stdout, /OK  plugin manifest/);
+    assert.match(result.stdout, /OK  codex installed plugin/);
+    assert.doesNotMatch(result.stdout, /FAIL  backlog\.json/);
+    assert.doesNotMatch(result.stdout, /FAIL  project\.json/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("doctor --host all 会同时检查 Codex、Claude 和 Gemini 宿主条件", () => {

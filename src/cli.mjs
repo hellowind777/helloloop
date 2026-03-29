@@ -4,15 +4,25 @@ import { analyzeExecution } from "./backlog.mjs";
 import { renderAnalyzeConfirmation, resolveAutoRunMaxTasks } from "./analyze_confirmation.mjs";
 import {
   confirmAutoExecution,
+  confirmRepoConflictResolution,
   renderAnalyzeStopMessage,
   renderAutoRunSummary,
+  renderRepoConflictStopMessage,
   runDoctor,
+  shouldConfirmRepoRebuild,
 } from "./cli_support.mjs";
 import { createContext } from "./context.mjs";
 import { analyzeWorkspace } from "./analyzer.mjs";
+import {
+  hasBlockingInputIssues,
+  normalizeAnalyzeOptions,
+  renderBlockingInputIssueMessage,
+} from "./analyze_user_input.mjs";
 import { loadBacklog, scaffoldIfMissing } from "./config.mjs";
 import { resolveRepoRoot } from "./discovery.mjs";
-import { installPluginBundle } from "./install.mjs";
+import { createDiscoveryPromptSession, resolveDiscoveryFailureInteractively } from "./discovery_prompt.mjs";
+import { installPluginBundle, uninstallPluginBundle } from "./install.mjs";
+import { resetRepoForRebuild } from "./rebuild.mjs";
 import { runLoop, runOnce, renderStatusText } from "./runner.mjs";
 
 const REPO_ROOT_PLACEHOLDER = "<REPO_ROOT>";
@@ -20,6 +30,7 @@ const DOCS_PATH_PLACEHOLDER = "<DOCS_PATH>";
 const KNOWN_COMMANDS = new Set([
   "analyze",
   "install",
+  "uninstall",
   "init",
   "status",
   "next",
@@ -42,6 +53,7 @@ function parseArgs(argv) {
   const options = {
     requiredDocs: [],
     constraints: [],
+    positionalArgs: [],
   };
 
   for (let index = 0; index < rest.length; index += 1) {
@@ -49,6 +61,7 @@ function parseArgs(argv) {
     if (arg === "--dry-run") options.dryRun = true;
     else if (arg === "--yes" || arg === "-y") options.yes = true;
     else if (arg === "--allow-high-risk") options.allowHighRisk = true;
+    else if (arg === "--rebuild-existing") options.rebuildExisting = true;
     else if (arg === "--force") options.force = true;
     else if (arg === "--task-id") { options.taskId = rest[index + 1]; index += 1; }
     else if (arg === "--max-tasks") { options.maxTasks = Number(rest[index + 1]); index += 1; }
@@ -63,10 +76,7 @@ function parseArgs(argv) {
     else if (arg === "--config-dir") { options.configDirName = rest[index + 1]; index += 1; }
     else if (arg === "--required-doc") { options.requiredDocs.push(rest[index + 1]); index += 1; }
     else if (arg === "--constraint") { options.constraints.push(rest[index + 1]); index += 1; }
-    else if (!options.inputPath) { options.inputPath = arg; }
-    else {
-      throw new Error(`未知参数：${arg}`);
-    }
+    else { options.positionalArgs.push(arg); }
   }
 
   return { command, options };
@@ -74,11 +84,12 @@ function parseArgs(argv) {
 
 function helpText() {
   return [
-    "用法：helloloop [command] [path] [options]",
+    "用法：helloloop [command] [path|需求说明...] [options]",
     "",
     "命令：",
     "  analyze               自动分析并生成执行确认单；确认后继续自动接续开发（默认）",
     "  install               安装插件到 Codex Home（适合 npx / npm bin 分发）",
+    "  uninstall             从所选宿主卸载插件并清理注册信息",
     "  init                  初始化 .helloloop 配置",
     "  status                查看 backlog 与下一任务",
     "  next                  生成下一任务干跑预览",
@@ -101,8 +112,13 @@ function helpText() {
     "  --max-attempts <n>    每种策略内最多重试 n 次",
     "  --max-strategies <n>  单任务最多切换 n 种策略继续重试",
     "  --allow-high-risk     允许执行 medium/high/critical 风险任务",
+    "  --rebuild-existing    分析判断当前项目与文档冲突时，自动清理当前项目后按文档重建",
     "  --required-doc <p>    增加一个全局必读文档（AGENTS.md 会被自动忽略）",
     "  --constraint <text>   增加一个全局实现约束",
+    "",
+    "补充说明：",
+    "  analyze 默认支持在命令后混合传入路径和自然语言要求。",
+    "  示例：npx helloloop <DOCS_PATH> <PROJECT_ROOT> 先分析偏差，不要执行",
   ].join("\n");
 }
 
@@ -117,6 +133,7 @@ function renderFollowupExamples() {
     `npx helloloop <PATH>`,
     `npx helloloop --dry-run`,
     `npx helloloop install --host all`,
+    `npx helloloop uninstall --host all`,
     `npx helloloop next`,
     `如需显式补充路径：npx helloloop --repo ${REPO_ROOT_PLACEHOLDER} --docs ${DOCS_PATH_PLACEHOLDER}`,
   ].join("\n");
@@ -147,6 +164,29 @@ function renderInstallSummary(result) {
   return lines.join("\n");
 }
 
+function renderUninstallSummary(result) {
+  const lines = [
+    "HelloLoop 已从以下宿主卸载：",
+  ];
+
+  for (const item of result.uninstalledHosts) {
+    lines.push(`- ${item.displayName}：${item.removed ? "已清理" : "未发现现有安装"}`);
+    lines.push(`  目标目录：${item.targetRoot}`);
+    if (item.marketplaceFile) {
+      lines.push(`  marketplace：${item.marketplaceFile}`);
+    }
+    if (item.settingsFile) {
+      lines.push(`  settings：${item.settingsFile}`);
+    }
+  }
+
+  lines.push("");
+  lines.push("如需重新安装：");
+  lines.push("- `npx helloloop install --host codex`");
+  lines.push("- `npx helloloop install --host all`");
+  return lines.join("\n");
+}
+
 function resolveContextFromOptions(options) {
   const resolvedRepo = resolveRepoRoot({
     cwd: process.cwd(),
@@ -164,8 +204,88 @@ function resolveContextFromOptions(options) {
   });
 }
 
+async function analyzeWithResolvedDiscovery(options) {
+  let currentOptions = { ...options };
+  let lastResult = null;
+  let promptSession = null;
+
+  function getPromptSession() {
+    if (currentOptions.yes) {
+      return null;
+    }
+    if (!promptSession) {
+      promptSession = createDiscoveryPromptSession();
+    }
+    return promptSession;
+  }
+
+  try {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      lastResult = await analyzeWorkspace({
+        cwd: process.cwd(),
+        inputPath: currentOptions.inputPath,
+        repoRoot: currentOptions.repoRoot,
+        docsPath: currentOptions.docsPath,
+        configDirName: currentOptions.configDirName,
+        allowNewRepoRoot: currentOptions.allowNewRepoRoot,
+        selectionSources: currentOptions.selectionSources,
+        userIntent: currentOptions.userIntent,
+      });
+
+      if (lastResult.ok) {
+        return {
+          options: currentOptions,
+          result: lastResult,
+        };
+      }
+
+      const nextOptions = await resolveDiscoveryFailureInteractively(
+        lastResult,
+        currentOptions,
+        process.cwd(),
+        !currentOptions.yes,
+        getPromptSession(),
+      );
+      if (!nextOptions) {
+        break;
+      }
+      currentOptions = nextOptions;
+    }
+  } finally {
+    promptSession?.close();
+  }
+
+  return {
+    options: currentOptions,
+    result: lastResult,
+  };
+}
+
+function renderRebuildSummary(resetSummary) {
+  return [
+    "已按确认结果清理当前项目，并准备按开发文档重新开始。",
+    `- 已清理顶层条目：${resetSummary.removedEntries.length ? resetSummary.removedEntries.join("，") : "无"}`,
+    `- 已保留开发文档：${resetSummary.preservedDocs.length ? resetSummary.preservedDocs.join("，") : "无"}`,
+    `- 重建记录：${resetSummary.manifestFile.replaceAll("\\", "/")}`,
+  ].join("\n");
+}
+
 export async function runCli(argv) {
-  const { command, options } = parseArgs(argv);
+  const parsed = parseArgs(argv);
+  const command = parsed.command;
+  const options = command === "analyze"
+    ? normalizeAnalyzeOptions(parsed.options, process.cwd())
+    : (() => {
+      const nextOptions = { ...parsed.options };
+      const positionals = Array.isArray(nextOptions.positionalArgs) ? nextOptions.positionalArgs : [];
+      if (positionals.length > 1) {
+        throw new Error(`未知参数：${positionals.slice(1).join(" ")}`);
+      }
+      if (positionals.length === 1 && !nextOptions.inputPath) {
+        nextOptions.inputPath = positionals[0];
+      }
+      return nextOptions;
+    })();
 
   if (command === "help" || command === "--help" || command === "-h") {
     printHelp();
@@ -189,28 +309,94 @@ export async function runCli(argv) {
     return;
   }
 
-  if (command === "analyze") {
-    const result = await analyzeWorkspace({
-      cwd: process.cwd(),
-      inputPath: options.inputPath,
-      repoRoot: options.repoRoot,
-      docsPath: options.docsPath,
-      configDirName: options.configDirName,
+  if (command === "uninstall") {
+    const result = uninstallPluginBundle({
+      host: options.host,
+      codexHome: options.codexHome,
+      claudeHome: options.claudeHome,
+      geminiHome: options.geminiHome,
     });
+    console.log(renderUninstallSummary(result));
+    return;
+  }
 
-    if (!result.ok) {
-      console.error(result.summary);
+  if (command === "analyze") {
+    if (hasBlockingInputIssues(options.inputIssues)) {
+      console.error(renderBlockingInputIssueMessage(options.inputIssues));
       process.exitCode = 1;
       return;
     }
 
-    const confirmationText = renderAnalyzeConfirmation(result.context, result.analysis, result.backlog, options);
-    const execution = analyzeExecution(result.backlog, options);
+    let analyzed = await analyzeWithResolvedDiscovery(options);
+    let result = analyzed.result;
+    let activeOptions = analyzed.options;
 
-    console.log(confirmationText);
-    console.log("");
+    while (true) {
+      if (!result.ok) {
+        console.error(result.summary);
+        process.exitCode = 1;
+        return;
+      }
 
-    if (options.dryRun) {
+      const confirmationText = renderAnalyzeConfirmation(
+        result.context,
+        result.analysis,
+        result.backlog,
+        activeOptions,
+        result.discovery,
+      );
+      console.log(confirmationText);
+      console.log("");
+
+      if (!shouldConfirmRepoRebuild(result.analysis, result.discovery)) {
+        break;
+      }
+
+      if (activeOptions.rebuildExisting) {
+        const resetSummary = resetRepoForRebuild(result.context, result.discovery);
+        console.log(renderRebuildSummary(resetSummary));
+        console.log("");
+        analyzed = await analyzeWithResolvedDiscovery({
+          ...activeOptions,
+          repoRoot: result.context.repoRoot,
+          rebuildExisting: false,
+        });
+        result = analyzed.result;
+        activeOptions = analyzed.options;
+        continue;
+      }
+
+      if (activeOptions.yes) {
+        console.log(renderRepoConflictStopMessage(result.analysis));
+        process.exitCode = 1;
+        return;
+      }
+
+      const repoConflictDecision = await confirmRepoConflictResolution(result.analysis);
+      if (repoConflictDecision === "cancel") {
+        console.log("已取消自动执行；分析结果与 backlog 已保留在 .helloloop/。");
+        return;
+      }
+
+      if (repoConflictDecision === "continue") {
+        break;
+      }
+
+      const resetSummary = resetRepoForRebuild(result.context, result.discovery);
+      console.log(renderRebuildSummary(resetSummary));
+      console.log("");
+      analyzed = await analyzeWithResolvedDiscovery({
+        ...activeOptions,
+        repoRoot: result.context.repoRoot,
+        rebuildExisting: false,
+      });
+      result = analyzed.result;
+      activeOptions = analyzed.options;
+    }
+
+    const execution = analyzeExecution(result.backlog, activeOptions);
+
+    if (activeOptions.dryRun) {
       console.log("已按 --dry-run 跳过自动执行。");
       return;
     }
@@ -220,7 +406,7 @@ export async function runCli(argv) {
       return;
     }
 
-    const approved = options.yes ? true : await confirmAutoExecution();
+    const approved = activeOptions.yes ? true : await confirmAutoExecution();
     if (!approved) {
       console.log("已取消自动执行；分析结果与 backlog 已保留在 .helloloop/。");
       return;
@@ -229,11 +415,11 @@ export async function runCli(argv) {
     console.log("");
     console.log("开始自动接续执行...");
     const results = await runLoop(result.context, {
-      ...options,
-      maxTasks: resolveAutoRunMaxTasks(result.backlog, options),
+      ...activeOptions,
+      maxTasks: resolveAutoRunMaxTasks(result.backlog, activeOptions),
     });
     const refreshedBacklog = loadBacklog(result.context);
-    console.log(renderAutoRunSummary(result.context, refreshedBacklog, results, options));
+    console.log(renderAutoRunSummary(result.context, refreshedBacklog, results, activeOptions));
     if (results.some((item) => !item.ok)) {
       process.exitCode = 1;
     }

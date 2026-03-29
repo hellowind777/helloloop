@@ -1,4 +1,5 @@
 import { formatList } from "./common.mjs";
+import { renderUserIntentLines } from "./analyze_user_input.mjs";
 import {
   hasCustomProjectConstraints,
   listMandatoryGuardrails,
@@ -30,15 +31,18 @@ function renderDocPackets(docPackets) {
 
 export function buildAnalysisPrompt({
   repoRoot,
+  repoOriginallyExisted = true,
   docsEntries,
   docPackets,
   existingStateText = "",
   existingBacklogText = "",
   existingProjectConstraints = [],
+  userIntent = {},
 }) {
   const mandatoryGuardrails = listMandatoryGuardrails();
   const effectiveConstraints = resolveProjectConstraints(existingProjectConstraints);
   const usingFallbackConstraints = !hasCustomProjectConstraints(existingProjectConstraints);
+  const userIntentLines = renderUserIntentLines(userIntent);
 
   return [
     "你要为一个本地代码仓库做“接续开发分析”。",
@@ -50,9 +54,12 @@ export function buildAnalysisPrompt({
     "3. 生成的任务必须颗粒度足够，能直接进入开发，不允许输出“继续开发”这类空泛任务。",
     "4. 只关注当前目标仓库，不要把其他仓库的任务混进来；如果文档覆盖多仓库，只提取当前仓库相关任务。",
     "5. 如果某项工作依赖其他仓库或外部输入，允许输出 `blocked` 任务，但必须明确阻塞原因。",
+    "6. 如果“本次命令补充输入”中包含自然语言要求，无论中文、英文还是混合输入，都必须按语义理解并体现在后续任务中，不要依赖固定关键词。",
     "",
     section("目标仓库", `- 路径：${repoRoot.replaceAll("\\", "/")}`),
+    section("仓库初始状态", `- 该项目目录在本次分析前${repoOriginallyExisted ? "已经存在" : "尚不存在，将按新项目处理"}`),
     section("开发文档入口", docsEntries.map((item) => `- ${item}`).join("\n")),
+    listSection("本次命令补充输入", userIntentLines),
     existingStateText ? section("已有状态摘要", existingStateText) : "",
     listSection("内建安全底线", mandatoryGuardrails),
     listSection(usingFallbackConstraints ? "默认工程约束（文档未明确时也必须遵守）" : "已有项目约束", effectiveConstraints),
@@ -70,6 +77,11 @@ export function buildAnalysisPrompt({
       "9. `docs` 必须引用本次文档入口中的相关路径；`paths` 必须写当前仓库内的实际目录或文件模式。",
       "10. `acceptance` 必须可验证，不要写空话。",
       "11. `constraints` 只写从项目文档或现有项目配置中提炼出的项目特有约束；不要重复内建安全底线。",
+      "12. 如果存在命令补充输入，请额外输出 `requestInterpretation`：包含 `summary`、`priorities`、`cautions`，用于总结你对用户补充要求的语义理解。",
+      "13. 额外输出 `repoDecision`：包含 `compatibility`、`action`、`reason`，用于判断当前项目目录与开发文档目标是否匹配。",
+      "14. 当当前项目目录已存在，但代码结构/产品方向与开发文档目标明显冲突，且更合理的路径是清理后重建时，`repoDecision.compatibility` 设为 `conflict`，`repoDecision.action` 设为 `confirm_rebuild`。",
+      "15. 当当前项目目录与开发文档目标一致或可以直接接续时，`repoDecision.compatibility` 设为 `compatible`，`repoDecision.action` 设为 `continue_existing`。",
+      "16. 当本次项目目录原本不存在，或文档目标明显是从零开始新建项目时，`repoDecision.action` 可设为 `start_new`。",
     ].join("\n")),
   ].filter(Boolean).join("\n");
 }

@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import { renderInputIssueLines, renderUserIntentLines } from "./analyze_user_input.mjs";
 import { analyzeExecution, summarizeBacklog } from "./backlog.mjs";
 import { loadPolicy, loadVerifyCommands } from "./config.mjs";
 
@@ -62,6 +63,76 @@ function resolvePreviewVerifyCommands(context, execution) {
   return loadVerifyCommands(context);
 }
 
+function renderResolutionLines(discovery, context, docsDisplay) {
+  const repoResolution = discovery?.resolution?.repo;
+  const docsResolution = discovery?.resolution?.docs;
+  const repoBasis = Array.isArray(repoResolution?.basis) && repoResolution.basis.length
+    ? repoResolution.basis.join("；")
+    : "无";
+  const docsBasis = Array.isArray(docsResolution?.basis) && docsResolution.basis.length
+    ? docsResolution.basis.join("；")
+    : "无";
+  const repoState = repoResolution?.exists === false
+    ? "当前目录不存在，将按新项目创建"
+    : "已存在项目目录";
+
+  return [
+    "路径判断：",
+    `- 开发文档：${docsDisplay.length ? docsDisplay.join("，") : "未识别"}`,
+    `- 文档来源：${docsResolution?.sourceLabel || "自动判断"}`,
+    `- 文档把握：${docsResolution?.confidenceLabel || "中"}`,
+    `- 文档依据：${docsBasis}`,
+    `- 目标仓库：${context.repoRoot.replaceAll("\\", "/")}`,
+    `- 项目状态：${repoState}`,
+    `- 仓库来源：${repoResolution?.sourceLabel || "自动判断"}`,
+    `- 仓库把握：${repoResolution?.confidenceLabel || "中"}`,
+    `- 仓库依据：${repoBasis}`,
+  ];
+}
+
+function renderRequestInterpretationLines(analysis) {
+  const interpretation = analysis?.requestInterpretation;
+  if (!interpretation) {
+    return [];
+  }
+
+  return [
+    "需求语义理解：",
+    `- 总结：${interpretation.summary || "无"}`,
+    ...(interpretation.priorities.length
+      ? interpretation.priorities.map((item) => `- 优先关注：${item}`)
+      : ["- 优先关注：无"]),
+    ...(interpretation.cautions.length
+      ? interpretation.cautions.map((item) => `- 特别注意：${item}`)
+      : ["- 特别注意：无"]),
+  ];
+}
+
+function renderRepoDecisionLines(analysis) {
+  const decision = analysis?.repoDecision;
+  if (!decision) {
+    return [];
+  }
+
+  const compatibilityMap = {
+    compatible: "兼容，可直接接续",
+    conflict: "明显冲突",
+    uncertain: "存在不确定性",
+  };
+  const actionMap = {
+    continue_existing: "继续在当前项目上接续",
+    confirm_rebuild: "先确认是否清理当前项目后重建",
+    start_new: "按新项目路径继续推进",
+  };
+
+  return [
+    "项目匹配判断：",
+    `- 匹配结论：${compatibilityMap[decision.compatibility] || decision.compatibility}`,
+    `- 建议动作：${actionMap[decision.action] || decision.action}`,
+    `- 判断依据：${decision.reason}`,
+  ];
+}
+
 export function resolveAutoRunMaxTasks(backlog, options = {}) {
   const explicitMaxTasks = Number(options.maxTasks);
   if (Number.isFinite(explicitMaxTasks) && explicitMaxTasks > 0) {
@@ -73,7 +144,7 @@ export function resolveAutoRunMaxTasks(backlog, options = {}) {
   return Math.max(1, pendingTotal);
 }
 
-export function renderAnalyzeConfirmation(context, analysis, backlog, options = {}) {
+export function renderAnalyzeConfirmation(context, analysis, backlog, options = {}, discovery = {}) {
   const summary = summarizeBacklog(backlog);
   const execution = analyzeExecution(backlog, options);
   const policy = loadPolicy(context);
@@ -82,12 +153,17 @@ export function renderAnalyzeConfirmation(context, analysis, backlog, options = 
   const docsDisplay = analysis.requiredDocs.map((entry) => (
     toDisplayPath(context.repoRoot, path.resolve(context.repoRoot, entry))
   ));
+  const userIntentLines = renderUserIntentLines(options.userIntent);
+  const inputIssueLines = renderInputIssueLines(options.inputIssues);
 
   return [
     "执行确认单",
     "============",
-    `目标仓库：${context.repoRoot.replaceAll("\\", "/")}`,
-    `开发文档：${docsDisplay.length ? docsDisplay.join("，") : "未识别"}`,
+    ...renderResolutionLines(discovery, context, docsDisplay),
+    ...(userIntentLines.length ? ["", "本次命令补充输入：", ...formatList(userIntentLines)] : []),
+    ...(inputIssueLines.length ? ["", "输入提示：", ...inputIssueLines] : []),
+    ...(renderRequestInterpretationLines(analysis).length ? ["", ...renderRequestInterpretationLines(analysis)] : []),
+    ...(renderRepoDecisionLines(analysis).length ? ["", ...renderRepoDecisionLines(analysis)] : []),
     "",
     "当前进度：",
     `- ${analysis.summary.currentState}`,

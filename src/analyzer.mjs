@@ -55,6 +55,29 @@ function normalizeAnalysisPayload(payload, docsEntries) {
     throw new Error("Codex 分析结果无效：未生成可用任务。");
   }
 
+  const requestInterpretation = payload?.requestInterpretation && typeof payload.requestInterpretation === "object"
+    ? {
+      summary: String(payload.requestInterpretation.summary || "").trim(),
+      priorities: Array.isArray(payload.requestInterpretation.priorities)
+        ? payload.requestInterpretation.priorities.map((item) => String(item || "").trim()).filter(Boolean)
+        : [],
+      cautions: Array.isArray(payload.requestInterpretation.cautions)
+        ? payload.requestInterpretation.cautions.map((item) => String(item || "").trim()).filter(Boolean)
+        : [],
+    }
+    : null;
+  const repoDecision = payload?.repoDecision && typeof payload.repoDecision === "object"
+    ? {
+      compatibility: ["compatible", "conflict", "uncertain"].includes(String(payload.repoDecision.compatibility || ""))
+        ? String(payload.repoDecision.compatibility)
+        : "compatible",
+      action: ["continue_existing", "confirm_rebuild", "start_new"].includes(String(payload.repoDecision.action || ""))
+        ? String(payload.repoDecision.action)
+        : "continue_existing",
+      reason: String(payload.repoDecision.reason || "").trim(),
+    }
+    : null;
+
   return {
     project: String(payload.project || "").trim() || "helloloop-project",
     summary: {
@@ -66,6 +89,16 @@ function normalizeAnalysisPayload(payload, docsEntries) {
     constraints: Array.isArray(payload.constraints)
       ? payload.constraints.map((item) => String(item || "").trim()).filter(Boolean)
       : [],
+    requestInterpretation: requestInterpretation && (
+      requestInterpretation.summary
+      || requestInterpretation.priorities.length
+      || requestInterpretation.cautions.length
+    )
+      ? requestInterpretation
+      : null,
+    repoDecision: repoDecision && repoDecision.reason
+      ? repoDecision
+      : null,
     tasks,
     requiredDocs: docsEntries,
   };
@@ -99,6 +132,7 @@ export async function analyzeWorkspace(options = {}) {
     repoRoot: options.repoRoot,
     docsPath: options.docsPath,
     configDirName: options.configDirName,
+    allowNewRepoRoot: options.allowNewRepoRoot,
   });
 
   if (!discovery.ok) {
@@ -106,6 +140,7 @@ export async function analyzeWorkspace(options = {}) {
       ok: false,
       code: discovery.code,
       summary: discovery.message,
+      discovery,
     };
   }
 
@@ -125,11 +160,13 @@ export async function analyzeWorkspace(options = {}) {
 
   const prompt = buildAnalysisPrompt({
     repoRoot: context.repoRoot,
+    repoOriginallyExisted: discovery?.resolution?.repo?.exists !== false,
     docsEntries: discovery.docsEntries,
     docPackets,
     existingStateText,
     existingBacklogText,
     existingProjectConstraints: existingProjectConfig.constraints,
+    userIntent: options.userIntent,
   });
 
   const runDir = path.join(context.runsDir, `${nowIso().replaceAll(":", "-").replaceAll(".", "-")}-analysis`);
@@ -204,5 +241,6 @@ export async function analyzeWorkspace(options = {}) {
     analysis,
     backlog,
     summary: buildAnalysisSummaryText(context, analysis, backlog),
+    discovery,
   };
 }

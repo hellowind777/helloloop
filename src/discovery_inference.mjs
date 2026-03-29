@@ -4,10 +4,12 @@ import path from "node:path";
 import { readJson } from "./common.mjs";
 import { expandDocumentEntries } from "./doc_loader.mjs";
 import {
+  findPreferredRepoRootFromPath,
   findRepoRootFromPath,
   isDocFile,
   isDocsDirectory,
-  looksLikeProjectRoot,
+  listDocFilesInDirectory,
+  listProjectCandidatesInDirectory,
   normalizeForRepo,
   pathExists,
   resolveAbsolute,
@@ -86,15 +88,52 @@ function extractRepoNameHintsFromText(text) {
   return [...hints];
 }
 
-function listNearbyProjectCandidates(searchRoot) {
-  if (!pathExists(searchRoot) || !fs.statSync(searchRoot).isDirectory()) {
+function formatCandidates(title, candidates) {
+  if (!Array.isArray(candidates) || !candidates.length) {
     return [];
   }
 
-  return fs.readdirSync(searchRoot, { withFileTypes: true })
+  return [
+    title,
+    ...candidates.map((item, index) => `${index + 1}. ${path.basename(item)} — ${item.replaceAll("\\", "/")}`),
+  ];
+}
+
+export function inspectWorkspaceDirectory(directoryPath) {
+  if (!pathExists(directoryPath) || !fs.statSync(directoryPath).isDirectory()) {
+    return {
+      docCandidates: [],
+      docsEntries: [],
+      repoCandidates: [],
+      topLevelDirectories: [],
+      topLevelDocFiles: [],
+    };
+  }
+
+  const topLevelEntries = fs.readdirSync(directoryPath, { withFileTypes: true });
+  const namedDocsDirectories = topLevelEntries
+    .filter((entry) => (
+      entry.isDirectory()
+      && ["doc", "docs", "documentation"].includes(entry.name.toLowerCase())
+    ))
+    .map((entry) => path.join(directoryPath, entry.name))
+    .filter((candidate) => isDocsDirectory(candidate));
+
+  const topLevelDocFiles = listDocFilesInDirectory(directoryPath)
+    .filter((candidate) => path.basename(candidate).toLowerCase() !== "agents.md");
+  const docCandidates = uniquePaths([...topLevelDocFiles, ...namedDocsDirectories]);
+  const topLevelDirectories = topLevelEntries
     .filter((entry) => entry.isDirectory())
-    .map((entry) => path.join(searchRoot, entry.name))
-    .filter((directoryPath) => looksLikeProjectRoot(directoryPath));
+    .map((entry) => path.join(directoryPath, entry.name));
+
+  const repoCandidates = uniquePaths(listProjectCandidatesInDirectory(directoryPath));
+  return {
+    docCandidates,
+    docsEntries: docCandidates.length === 1 ? [docCandidates[0]] : [],
+    repoCandidates,
+    topLevelDirectories,
+    topLevelDocFiles,
+  };
 }
 
 export function inferRepoFromDocs(docEntries, cwd) {
@@ -117,7 +156,7 @@ export function inferRepoFromDocs(docEntries, cwd) {
     .map((item) => resolveAbsolute(item, cwd))
     .filter((candidate) => pathExists(candidate))
     .map((candidate) => (fs.statSync(candidate).isDirectory() ? candidate : path.dirname(candidate)))
-    .map((candidate) => findRepoRootFromPath(candidate) || (looksLikeProjectRoot(candidate) ? candidate : ""))
+    .map((candidate) => findPreferredRepoRootFromPath(candidate))
     .filter(Boolean);
 
   const uniquePathCandidates = uniquePaths(pathHintCandidates);
@@ -136,11 +175,15 @@ export function inferRepoFromDocs(docEntries, cwd) {
         ? absolutePath
         : path.dirname(absolutePath);
       const parent = path.dirname(directory);
-      return [directory, parent, path.dirname(parent)];
+      const roots = [directory, parent];
+      if (["doc", "docs", "documentation"].includes(path.basename(directory).toLowerCase())) {
+        roots.push(path.dirname(parent));
+      }
+      return roots;
     }),
   );
   const nearbyCandidates = uniquePaths(
-    searchRoots.flatMap((searchRoot) => listNearbyProjectCandidates(searchRoot)),
+    searchRoots.flatMap((searchRoot) => listProjectCandidatesInDirectory(searchRoot)),
   );
   const namedCandidates = nearbyCandidates.filter((directoryPath) => (
     repoNameHints.includes(path.basename(directoryPath).toLowerCase())
@@ -156,7 +199,7 @@ export function inferRepoFromDocs(docEntries, cwd) {
 
   return {
     repoRoot: "",
-    candidates: uniquePaths([...uniquePathCandidates, ...namedCandidates]),
+    candidates: uniquePaths([...uniquePathCandidates, ...namedCandidates, ...nearbyCandidates]),
     source: "",
   };
 }
@@ -203,18 +246,19 @@ export function inferDocsForRepo(repoRoot, cwd, configDirName) {
 export function renderMissingRepoMessage(docEntries, candidates) {
   return [
     "无法自动确定要开发的项目仓库路径。",
-    docEntries.length ? `已找到开发文档：${docEntries.join(", ")}` : "",
-    candidates.length > 1 ? `本地发现多个候选项目：${candidates.map((item) => path.basename(item)).join(", ")}` : "",
-    "请补充项目仓库路径后重试，例如：",
+    docEntries.length ? `已找到开发文档：${docEntries.map((item) => item.replaceAll("\\", "/")).join("，")}` : "",
+    ...formatCandidates("候选项目：", candidates),
+    "可重新运行 `npx helloloop` 后按提示选择，或显式补充项目路径，例如：",
     "npx helloloop --repo <PROJECT_ROOT>",
   ].filter(Boolean).join("\n");
 }
 
-export function renderMissingDocsMessage(repoRoot) {
+export function renderMissingDocsMessage(repoRoot, candidates = []) {
   return [
     "无法自动确定开发文档位置。",
-    `已找到项目仓库：${repoRoot}`,
-    "请补充开发文档路径后重试，例如：",
+    `已找到项目仓库：${repoRoot.replaceAll("\\", "/")}`,
+    ...formatCandidates("候选开发文档：", candidates),
+    "可重新运行 `npx helloloop` 后按提示选择，或显式补充开发文档路径，例如：",
     "npx helloloop --docs <DOCS_PATH>",
   ].join("\n");
 }

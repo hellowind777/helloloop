@@ -28,33 +28,29 @@ function probeCodexVersion() {
   };
 }
 
-export function collectDoctorChecks(context) {
-  const codexVersion = probeCodexVersion();
+function shouldCheckProjectRuntime(context, options = {}) {
+  if (options.repoRoot || options.inputPath) {
+    return true;
+  }
+
+  if (context.repoRoot !== context.toolRoot) {
+    return true;
+  }
+
   return [
+    context.backlogFile,
+    context.policyFile,
+    context.projectFile,
+  ].some((filePath) => fileExists(filePath));
+}
+
+export function collectDoctorChecks(context, options = {}) {
+  const codexVersion = probeCodexVersion();
+  const checks = [
     {
       name: "codex CLI",
       ok: codexVersion.ok,
       detail: codexVersion.detail,
-    },
-    {
-      name: "backlog.json",
-      ok: fileExists(context.backlogFile),
-      detail: context.backlogFile,
-    },
-    {
-      name: "policy.json",
-      ok: fileExists(context.policyFile),
-      detail: context.policyFile,
-    },
-    {
-      name: "verify.yaml",
-      ok: fileExists(context.repoVerifyFile),
-      detail: context.repoVerifyFile,
-    },
-    {
-      name: "project.json",
-      ok: fileExists(context.projectFile),
-      detail: context.projectFile,
     },
     {
       name: "plugin manifest",
@@ -72,6 +68,33 @@ export function collectDoctorChecks(context) {
       detail: context.installScriptFile,
     },
   ];
+
+  if (shouldCheckProjectRuntime(context, options)) {
+    checks.splice(1, 0,
+      {
+        name: "backlog.json",
+        ok: fileExists(context.backlogFile),
+        detail: context.backlogFile,
+      },
+      {
+        name: "policy.json",
+        ok: fileExists(context.policyFile),
+        detail: context.policyFile,
+      },
+      {
+        name: "verify.yaml",
+        ok: fileExists(context.repoVerifyFile),
+        detail: context.repoVerifyFile,
+      },
+      {
+        name: "project.json",
+        ok: fileExists(context.projectFile),
+        detail: context.projectFile,
+      },
+    );
+  }
+
+  return checks;
 }
 
 function probeNamedCliVersion(commandName, toolDisplayName) {
@@ -108,7 +131,7 @@ function normalizeDoctorHosts(hostOption) {
 }
 
 function collectCodexDoctorChecks(context, options = {}) {
-  const checks = collectDoctorChecks(context);
+  const checks = collectDoctorChecks(context, options);
   if (options.codexHome) {
     checks.push({
       name: "codex installed plugin",
@@ -276,6 +299,50 @@ export async function confirmAutoExecution() {
   } finally {
     readline.close();
   }
+}
+
+export function shouldConfirmRepoRebuild(analysis, discovery) {
+  return analysis?.repoDecision?.action === "confirm_rebuild"
+    && discovery?.resolution?.repo?.exists !== false;
+}
+
+export async function confirmRepoConflictResolution(analysis) {
+  const decision = analysis?.repoDecision || {};
+  const readline = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const promptText = [
+    "检测到当前项目与开发文档目标存在明显冲突：",
+    `- ${decision.reason || "分析结果认为当前项目更适合先确认处理方式。"}`,
+    "请选择后续动作：",
+    "1. 继续在当前项目上尝试接续",
+    "2. 清理当前项目内容后按文档目标重新开始（推荐）",
+    "3. 取消本次执行",
+    "请输入 1 / 2 / 3：",
+  ].join("\n");
+
+  try {
+    const answer = String(await readline.question(promptText) || "").trim();
+    if (["2", "重建", "rebuild"].includes(answer.toLowerCase ? answer.toLowerCase() : answer)) {
+      return "rebuild";
+    }
+    if (["1", "继续", "continue"].includes(answer.toLowerCase ? answer.toLowerCase() : answer)) {
+      return "continue";
+    }
+    return "cancel";
+  } finally {
+    readline.close();
+  }
+}
+
+export function renderRepoConflictStopMessage(analysis) {
+  return [
+    "当前项目与开发文档目标存在明显冲突，已暂停自动执行。",
+    analysis?.repoDecision?.reason ? `原因：${analysis.repoDecision.reason}` : "",
+    "请重新运行交互式 `npx helloloop` 进行选择，或显式追加 `--rebuild-existing` 后再执行。",
+  ].filter(Boolean).join("\n");
 }
 
 export function renderAnalyzeStopMessage(reason) {

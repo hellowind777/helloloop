@@ -9,7 +9,7 @@ description: 当用户希望 Codex 先分析仓库当前进度、生成确认单
 
 ## 强制入口规则
 
-- 用户显式调用 `$helloloop` / `helloloop:helloloop` 时，默认必须优先执行 `npx helloloop` 或 `npx helloloop <PATH>`。
+- 用户显式调用 `$helloloop` / `#helloloop` / `helloloop:helloloop` 时，默认必须优先执行 `npx helloloop` 或 `npx helloloop <PATH>`。
 - 不允许在对话里手工模拟 `HelloLoop` 的分析、确认单、backlog 编排和自动续跑流程来代替 CLI。
 - 只有在以下情况，才允许先停下来问用户而不是直接执行 CLI：
   1. 用户既没有给路径，当前目录也无法判断项目仓库或开发文档
@@ -23,6 +23,27 @@ description: 当用户希望 Codex 先分析仓库当前进度、生成确认单
 - 用户给了单一路径 → 先执行 `npx helloloop <PATH>`
 - 用户明确只想先看分析和确认单 → 执行 `npx helloloop --dry-run`
 - 用户明确要求跳过确认直接开始 → 执行 `npx helloloop -y`
+- 用户在命令后附带了额外路径或自然语言要求 → 必须把这些附加内容一并传给主 CLI，不允许丢弃或手工改写
+
+## 附加输入处理规则
+
+- 命令后的显式路径优先于自动发现结果。
+- 命令后的非路径文本不靠关键词硬编码分流，而是作为“本次用户意图”原样传给 `HelloLoop` 的确认单与分析 prompt。
+- 如果附加输入里同时包含文档路径、项目路径和额外要求，优先保留全部信息，再由 CLI 输出确认单统一确认。
+- 不允许因为语言不同（中文 / 英文 / 其他语言）就忽略附加要求。
+
+## 路径发现与提问规则
+
+- 如果当前目录没有自动识别到明确开发文档，应先展示顶层文档文件、顶层目录和疑似项目目录，再要求用户补充文档路径。
+- 项目路径对外只有一个概念，不要单独追问“新项目路径”。
+- 如果用户输入的项目路径不存在，应直接把它视为准备创建的新项目目录。
+- 如果自动发现同时出现多个冲突的文档路径或项目路径，不允许替用户猜测，必须停下来确认。
+
+## 项目冲突规则
+
+- 如果分析认为“当前项目目录已存在，但与开发文档目标明显冲突”，必须先提示用户选择继续、重建还是取消。
+- 非交互模式下，只有显式追加 `--rebuild-existing`，才允许直接清理当前项目后重建。
+- 未经确认，不允许默认清空现有项目目录。
 
 ## 插件边界
 
@@ -45,8 +66,8 @@ description: 当用户希望 Codex 先分析仓库当前进度、生成确认单
 
 - 代码是事实源，开发文档是目标源。
 - `HelloLoop` 会先分析当前真实进度，再生成或刷新 `.helloloop/backlog.json`。
-- 分析后会展示执行确认单，明确告知当前进度、待办任务、验证命令和执行边界。
-- 用户确认后，默认会持续执行到 backlog 清空或遇到硬阻塞。
+- 分析后会展示中文执行确认单，明确告知路径判断、语义理解、项目匹配、当前进度、待办任务、验证命令和执行边界。
+- 用户确认后，默认会持续执行到 backlog 清空，或开发文档的最终目标完成且测试、验收通过，或遇到硬阻塞。
 - 真正的代码分析与实现仍由本机 `codex` CLI 完成。
 - `$helloloop` 的职责是把用户请求路由到主 CLI 流程，而不是在对话里手工复刻一套平行流程。
 
@@ -54,8 +75,10 @@ description: 当用户希望 Codex 先分析仓库当前进度、生成确认单
 
 - `npx helloloop`
 - `npx helloloop <PATH>`
+- `npx helloloop <PATH> <补充说明>`
 - `npx helloloop --dry-run`
 - `npx helloloop -y`
+- `npx helloloop --rebuild-existing`
 
 ## 手动控制命令
 
@@ -65,6 +88,8 @@ description: 当用户希望 Codex 先分析仓库当前进度、生成确认单
 - `npx helloloop run-loop --max-tasks <n>`
 - `npx helloloop doctor`
 - `npx helloloop init`
+- `npx helloloop install --host all`
+- `npx helloloop uninstall --host all`
 
 ## 调用方式
 

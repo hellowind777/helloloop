@@ -78,3 +78,48 @@ test("Windows 安装脚本覆盖已有安装时会清掉残留的 .git 元数据
     fs.rmSync(tempHome, { recursive: true, force: true });
   }
 });
+
+test("Windows 卸载脚本会移除 Codex Home 下的已安装插件与 marketplace 注册", {
+  skip: process.platform !== "win32",
+}, () => {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-home-uninstall-"));
+  const installScriptFile = path.join(repoRoot, "scripts", "install-home-plugin.ps1");
+  const uninstallScriptFile = path.join(repoRoot, "scripts", "uninstall-home-plugin.ps1");
+
+  const installResult = spawnSync("pwsh", [
+    "-NoLogo",
+    "-NoProfile",
+    "-File",
+    installScriptFile,
+    "-CodexHome",
+    tempHome,
+  ], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  assert.equal(installResult.status, 0, installResult.stderr);
+
+  const result = spawnSync("pwsh", [
+    "-NoLogo",
+    "-NoProfile",
+    "-File",
+    uninstallScriptFile,
+    "-CodexHome",
+    tempHome,
+  ], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+  try {
+    assert.equal(result.status, 0, result.stderr);
+    const pluginRoot = path.join(tempHome, "plugins", "helloloop");
+    const marketplaceFile = path.join(tempHome, ".agents", "plugins", "marketplace.json");
+
+    assert.ok(!fs.existsSync(pluginRoot));
+    const marketplace = JSON.parse(fs.readFileSync(marketplaceFile, "utf8"));
+    assert.equal(marketplace.plugins.some((plugin) => plugin?.name === "helloloop"), false);
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});

@@ -36,15 +36,80 @@ const PROJECT_DIR_MARKERS = [
   "tests",
 ];
 
-function directoryContainsDocs(directoryPath) {
+const IGNORED_PROJECT_SEGMENTS = new Set([
+  ".cache",
+  ".git",
+  ".next",
+  ".nuxt",
+  ".pnpm",
+  ".turbo",
+  ".venv",
+  ".yarn",
+  "__pycache__",
+  "build",
+  "cache",
+  "coverage",
+  "dist",
+  "node_modules",
+  "out",
+  "target",
+  "temp",
+  "tmp",
+  "vendor",
+  "venv",
+]);
+
+function listImmediateDirectories(directoryPath) {
   if (!pathExists(directoryPath) || !fs.statSync(directoryPath).isDirectory()) {
-    return false;
+    return [];
   }
 
-  const entries = fs.readdirSync(directoryPath, { withFileTypes: true });
-  return entries.some((entry) => (
-    entry.isFile() && DOC_FILE_SUFFIX.has(path.extname(entry.name).toLowerCase())
-  ));
+  return fs.readdirSync(directoryPath, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(directoryPath, entry.name));
+}
+
+function hasProjectMarker(directoryPath) {
+  return PROJECT_MARKERS.some((name) => pathExists(path.join(directoryPath, name)));
+}
+
+function looksLikeStrongProjectRoot(directoryPath) {
+  return pathExists(directoryPath)
+    && fs.statSync(directoryPath).isDirectory()
+    && hasProjectMarker(directoryPath);
+}
+
+export function listDocFilesInDirectory(directoryPath) {
+  if (!pathExists(directoryPath) || !fs.statSync(directoryPath).isDirectory()) {
+    return [];
+  }
+
+  return fs.readdirSync(directoryPath, { withFileTypes: true })
+    .filter((entry) => (
+      entry.isFile() && DOC_FILE_SUFFIX.has(path.extname(entry.name).toLowerCase())
+    ))
+    .map((entry) => path.join(directoryPath, entry.name));
+}
+
+function directoryContainsDocs(directoryPath) {
+  return listDocFilesInDirectory(directoryPath).length > 0;
+}
+
+function hasIgnoredProjectBasename(targetPath) {
+  return IGNORED_PROJECT_SEGMENTS.has(path.basename(targetPath).toLowerCase());
+}
+
+function choosePreferredCandidate(candidates, directory) {
+  return candidates.find((candidate) => {
+    const relativeToLeaf = path.relative(candidate, directory);
+    return relativeToLeaf
+      .split(/[\\/]+/)
+      .filter(Boolean)
+      .some((segment) => IGNORED_PROJECT_SEGMENTS.has(segment.toLowerCase()));
+  })
+    || candidates.find((candidate) => !hasIgnoredProjectBasename(candidate))
+    || candidates[0]
+    || "";
 }
 
 function walkUpDirectories(startPath) {
@@ -86,11 +151,35 @@ export function looksLikeProjectRoot(directoryPath) {
     return false;
   }
 
-  if (PROJECT_MARKERS.some((name) => pathExists(path.join(directoryPath, name)))) {
+  if (hasProjectMarker(directoryPath)) {
     return true;
   }
 
   return PROJECT_DIR_MARKERS.some((name) => pathExists(path.join(directoryPath, name)));
+}
+
+export function listProjectCandidatesInDirectory(searchRoot) {
+  return listImmediateDirectories(searchRoot)
+    .filter((directoryPath) => (
+      looksLikeProjectRoot(directoryPath) && !hasIgnoredProjectBasename(directoryPath)
+    ));
+}
+
+export function looksLikeWorkspaceDirectory(directoryPath) {
+  if (!pathExists(directoryPath) || !fs.statSync(directoryPath).isDirectory()) {
+    return false;
+  }
+
+  const repoCandidates = listProjectCandidatesInDirectory(directoryPath);
+  if (!repoCandidates.length) {
+    return false;
+  }
+
+  const hasLooseDocs = directoryContainsDocs(directoryPath)
+    || listImmediateDirectories(directoryPath)
+      .some((childPath) => DOC_DIR_NAMES.has(path.basename(childPath).toLowerCase()));
+
+  return repoCandidates.length > 1 || hasLooseDocs;
 }
 
 export function isDocsDirectory(directoryPath) {
@@ -101,6 +190,10 @@ export function isDocsDirectory(directoryPath) {
   const baseName = path.basename(directoryPath).toLowerCase();
   if (DOC_DIR_NAMES.has(baseName)) {
     return true;
+  }
+
+  if (looksLikeWorkspaceDirectory(directoryPath)) {
+    return false;
   }
 
   return directoryContainsDocs(directoryPath) && !looksLikeProjectRoot(directoryPath);
@@ -122,6 +215,39 @@ export function findRepoRootFromPath(startPath) {
   }
 
   return "";
+}
+
+export function findPreferredRepoRootFromPath(startPath) {
+  if (!pathExists(startPath)) {
+    return "";
+  }
+
+  const directory = fs.statSync(startPath).isDirectory()
+    ? startPath
+    : path.dirname(startPath);
+  const strongCandidates = [];
+  const weakCandidates = [];
+
+  for (const current of walkUpDirectories(directory)) {
+    if (pathExists(path.join(current, ".git"))) {
+      return current;
+    }
+
+    if (looksLikeStrongProjectRoot(current)) {
+      strongCandidates.push(current);
+      continue;
+    }
+
+    if (looksLikeProjectRoot(current)) {
+      weakCandidates.push(current);
+    }
+  }
+
+  if (strongCandidates.length) {
+    return choosePreferredCandidate(strongCandidates, directory);
+  }
+
+  return choosePreferredCandidate(weakCandidates, directory);
 }
 
 export function normalizeForRepo(repoRoot, targetPath) {
@@ -159,7 +285,16 @@ export function classifyExplicitPath(inputPath) {
   }
 
   if (fs.statSync(inputPath).isDirectory()) {
-    return { kind: "repo", absolutePath: inputPath };
+    const repoRoot = findRepoRootFromPath(inputPath);
+    if (repoRoot) {
+      return { kind: "repo", absolutePath: repoRoot };
+    }
+
+    if (looksLikeWorkspaceDirectory(inputPath)) {
+      return { kind: "workspace", absolutePath: inputPath };
+    }
+
+    return { kind: "directory", absolutePath: inputPath };
   }
 
   return { kind: "unsupported", absolutePath: inputPath };

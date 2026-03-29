@@ -1,18 +1,22 @@
 # HelloLoop Bundle 说明
 
-`HelloLoop` 以多宿主 bundle 交付，当前目录同时包含：
+`HelloLoop` 以一个源码仓库维护三套宿主资产：
 
-- `Codex` 官方插件资产
-- `Claude Code` marketplace / plugin 资产
-- `Gemini CLI` extension 资产
+- `Codex` 官方插件 bundle
+- `Claude Code` marketplace / plugin bundle
+- `Gemini CLI` extension bundle
 
-## 目录结构
+三家都原生执行开发，但共享同一套 `.helloloop/` 工作流状态规范。
+
+## 源码仓库结构
 
 ```text
 helloloop/
+├── .claude-plugin/
 ├── .codex-plugin/
-├── bin/
 ├── docs/
+├── hosts/
+├── bin/
 ├── scripts/
 ├── skills/
 ├── src/
@@ -20,74 +24,80 @@ helloloop/
 └── tests/
 ```
 
-其中：
+关键目录说明：
 
-- `.codex-plugin/`：插件 manifest 和展示元数据
-- `.claude-plugin/`：Claude plugin 元数据
+- `.codex-plugin/`：Codex 插件 manifest
+- `.claude-plugin/`：Claude plugin manifest
+- `hosts/`：Claude marketplace / Gemini extension 运行时资产
 - `bin/`：npm 命令入口
-- `hosts/`：Claude / Gemini 宿主运行时资产
-- `scripts/`：源码仓库下的 CLI 与安装脚本
-- `skills/`：插件技能
-- `src/`：路径发现、分析、调度、执行、安装等核心实现
-- `templates/`：写入目标仓库 `.helloloop/` 的模板
-- `tests/`：回归测试
-- `docs/`：源码仓库补充文档
+- `scripts/`：源码仓库调试入口与安装脚本
+- `skills/`：Codex 插件技能
+- `src/`：发现、分析、执行、安装、卸载、doctor 等核心实现
+- `templates/`：目标仓库 `.helloloop/` 初始化模板
+- `docs/`：源码仓库文档
+- `tests/`：源码仓库回归测试
 
-## 运行时边界
+## 运行时安装包边界
 
-安装后的运行时 bundle 只带以下内容：
+运行时 bundle 只带以下内容：
 
 - `.claude-plugin/`
 - `.codex-plugin/`
 - `LICENSE`
 - `README.md`
 - `bin/`
- - `hosts/`
+- `hosts/`
 - `scripts/`
 - `skills/`
 - `src/`
 - `templates/`
+- `package.json`
 
-`docs/` 和 `tests/` 用于源码仓库维护，不属于运行时必需文件。
+不会把 `docs/` 和 `tests/` 复制到用户安装目录。
+
+## 核心交互契约
+
+无论从哪个宿主进入，都遵循同样的交互顺序：
+
+1. 自动识别项目仓库与开发文档
+2. 分析当前代码进度、偏差和项目匹配性
+3. 在目标仓库根目录创建或刷新 `.helloloop/`
+4. 输出中文执行确认单
+5. 用户确认后，按当前宿主的原生 agent 逻辑继续推进开发、测试和验收
+
+补充规则：
+
+- `npx helloloop` 支持混合传入路径和自然语言要求
+- 如果当前目录没有识别到明确文档，会先展示顶层概览，再询问文档路径
+- 项目路径只问一次；若路径不存在，则按新项目路径处理
+- 如果现有项目与文档目标冲突，会先确认继续、重建还是取消
 
 ## 推荐工作流
 
-### npm / npx
+### 安装
 
 ```bash
-npx helloloop install --codex-home <CODEX_HOME>
+npx helloloop install --host all
+```
+
+### 执行
+
+```bash
 npx helloloop
 npx helloloop <PATH>
-npx helloloop --dry-run
+npx helloloop <PATH> <补充说明>
 ```
 
-主命令会自动：
-
-1. 识别项目仓库和开发文档
-2. 分析当前进度与偏差
-3. 输出执行确认单
-4. 经用户确认后继续自动接续执行
-
-### 源码仓库调试
+### 维护
 
 ```bash
-node ./scripts/helloloop.mjs
-node ./scripts/helloloop.mjs <PATH>
-node ./scripts/helloloop.mjs --dry-run
-```
-
-### 手动控制命令
-
-```bash
-npx helloloop status
-npx helloloop next
-npx helloloop run-once
-npx helloloop run-loop --max-tasks 2
+npx helloloop doctor --host all
+npx helloloop uninstall --host all
 ```
 
 ## `.helloloop/` 目录
 
-目标仓库中的 `.helloloop/` 保存：
+目标仓库中的 `.helloloop/` 至少包含：
 
 - `backlog.json`
 - `policy.json`
@@ -96,14 +106,20 @@ npx helloloop run-loop --max-tasks 2
 - `STATE.md`
 - `runs/`
 
-这些状态始终写入目标仓库，而不是写入插件 bundle。
+这些状态始终写入目标仓库，而不是写入插件安装目录。
 
-## Skill 调用
+## Codex 技能入口
 
-按当前 Codex 插件命名规则，推荐显式使用：
+Codex 下的显式技能入口为：
 
 ```text
 helloloop:helloloop
+```
+
+但推荐优先让它路由到：
+
+```bash
+npx helloloop
 ```
 
 ## 验证
@@ -114,7 +130,11 @@ helloloop:helloloop
 npm test
 ```
 
-它覆盖安装链路、CLI 表面、bundle 结构和分析流程的关键回归。
+发布前还会额外执行：
+
+```bash
+npm pack --dry-run
+```
 
 ## 许可证
 

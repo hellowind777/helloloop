@@ -1,21 +1,22 @@
 # HelloLoop 插件标准映射
 
-本文回答两个问题：
+本文回答三个问题：
 
-1. `HelloLoop` 如何按 `Codex` 最新插件标准组织
-2. `HelloLoop` 如何同时兼容 `Claude Code` 与 `Gemini CLI` 的宿主资产
+1. `HelloLoop` 如何符合 `Codex` 最新测试版插件目录标准
+2. `HelloLoop` 如何同时兼容 `Claude Code` 与 `Gemini CLI`
+3. `HelloLoop` 的主交互契约为什么设计成“先分析、再确认、再原生执行”
 
-## 上游快照
+## 上游核对快照
 
-本次核对使用的上游快照：
+本次对齐使用的上游快照：
 
 - `openai/codex`：`6a0c4709ca2154e9f3ebb07e58fb156386630188`
 - `openai/plugins`：`c33798c8a1e6da61a75e06e33ceae39a35f05ea5`
 - 本地 `codex --version`：`0.117.0`
 
-## 官方目录标准
+## Codex 官方目录标准
 
-`openai/plugins` 当前给出的插件目录标准是：
+`Codex` 当前插件目录的稳妥形态是：
 
 ```text
 <plugin-root>/
@@ -24,31 +25,22 @@
 ├── .app.json          # 可选
 ├── .mcp.json          # 可选
 ├── assets/            # 可选
-├── 其他伴随文件
+└── 其他伴随文件
 ```
 
-市场入口位于插件目录之外：
+本地 marketplace 入口位于：
 
 ```text
-<codex-home>/.agents/plugins/marketplace.json
+<CODEX_HOME>/.agents/plugins/marketplace.json
 ```
-
-## 当前运行时自动加载的核心内容
-
-`openai/codex` 当前运行时真正从插件 manifest 与约定目录中解析并接入的核心内容包括：
-
-- `skills`
-- `mcpServers`
-- `apps`
-- `interface`
-
-这意味着当前最稳妥的官方插件形态，是把插件能力明确落在技能、脚本和本地 bundle 目录上。
 
 ## HelloLoop 的落地映射
 
-`HelloLoop` 当前采用的标准映射如下：
-
 ### 插件根目录
+
+`HelloLoop` 当前在源码仓库根目录直接作为插件根目录，不再额外包一层子目录。
+
+核心映射如下：
 
 - `.codex-plugin/plugin.json`
 - `.claude-plugin/plugin.json`
@@ -62,50 +54,69 @@
 
 ### 外部注册
 
-- `<CODEX_HOME>/.agents/plugins/marketplace.json` 指向 `./plugins/helloloop`
+- `Codex`：`<CODEX_HOME>/.agents/plugins/marketplace.json` 指向 `./plugins/helloloop`
+- `Claude`：写入本地 marketplace、cache、known marketplaces、installed plugins 与 settings 启用项
+- `Gemini`：写入 `~/.gemini/extensions/helloloop`
 
 ### 目标仓库状态
 
-- 运行状态、backlog 和执行记录统一写入目标仓库根目录 `.helloloop/`
+开发过程中的 backlog、状态和运行记录统一写入目标仓库根目录：
+
+```text
+.helloloop/
+```
+
+这部分永远属于“目标项目”，不属于插件 bundle 本身。
+
+## 三宿主架构原则
+
+`HelloLoop` 的正确架构不是“一家 CLI 兼容另外两家”，而是：
+
+- 三家都能装
+- 三家都能用
+- 三家各自按自己的原生 agent 逻辑执行开发
+- `Codex` 路径作为首发平台和参考实现，体验可以更完整
+
+因此当前实现是：
+
+- `Codex`：插件 skill + 本地 CLI
+- `Claude`：原生 marketplace / plugin 指令
+- `Gemini`：原生 extension 指令
+
+## 主交互契约
+
+当前交互契约固定为：
+
+1. 优先使用 `npx helloloop` 或 `npx helloloop <PATH>`
+2. 允许在命令后混合传入路径和自然语言要求
+3. 先分析当前进度、偏差和项目匹配性
+4. 先输出中文执行确认单
+5. 用户确认后，再开始正式开发
+6. 由当前宿主原生工具持续推进，直到最终目标完成且测试、验收通过
+
+补充约束：
+
+- 如果当前目录没有明确开发文档，先展示顶层文档文件、顶层目录和疑似项目目录，再询问文档路径
+- 项目路径对外只有一个概念；若路径不存在，直接按新项目路径处理
+- 如果现有项目与开发文档目标冲突，必须先确认继续、重建还是取消
+- 非交互自动重建仅在显式追加 `--rebuild-existing` 时允许
 
 ## 当前设计结论
 
 1. 当前目录自身就是插件根目录，不再额外包一层 `plugins/helloloop/`
-2. 插件入口采用显式 skill 与 CLI，而不是依赖隐藏运行时路径
-3. `.helloloop/` 目录属于目标仓库，不属于插件 bundle
-4. 安装动作只负责复制运行时 bundle 并更新 marketplace
+2. 安装动作只负责复制运行时 bundle 并更新宿主注册信息
+3. `docs/` 与 `tests/` 只保留在源码仓库，不进入运行时安装包
+4. `.helloloop/` 永远属于目标项目，不属于插件 bundle
 5. 日常工作流优先使用 `npx helloloop` 或 `npx helloloop <PATH>`
-6. 主命令必须先展示执行确认单，再在用户确认后自动接续执行
-7. `Claude` 与 `Gemini` 走各自原生 plugin / extension 工作流
-8. Windows 端允许 `pwsh`、`bash`、`powershell` 这类安全 shell，但不允许回退到 `cmd.exe`
+6. `Codex`、`Claude`、`Gemini` 都原生执行开发，不互相伪装
+7. Windows 允许 `pwsh`、`bash`、`powershell` 等安全 shell，但不回退到 `cmd.exe`
 
-## 当前工作流
+## 发布约定
 
-推荐的实际使用顺序：
+当前仓库按版本号触发自动发包与发布：
 
-```bash
-npx helloloop install --codex-home <CODEX_HOME>
-npx helloloop
-```
+- Git tag：`vX.Y.Z` 或 `vX.Y.Z-beta.N`
+- `package.json` 的基础版本必须与 tag 基础版本一致
+- tag 推送后，GitHub Actions 会自动执行测试、`npm pack --dry-run`、`npm publish` 与 GitHub Release
 
-主命令会自动完成：
-
-1. 识别仓库和开发文档
-2. 对比当前代码与文档目标
-3. 生成 backlog 与状态目录
-4. 输出执行确认单
-5. 经确认后继续自动开发、测试和验收
-
-如果只想先看分析结果：
-
-```bash
-npx helloloop --dry-run
-```
-
-如果自动发现无法判断仓库或开发文档，再补充：
-
-```bash
-npx helloloop --repo <REPO_ROOT> --docs <DOCS_PATH>
-```
-
-这就是当前源码边界下，既符合官方插件结构，又符合 `HelloLoop` 目标职责的实现方式。
+这就是 `HelloLoop` 当前既符合 `Codex` 最新测试版插件结构，又能兼容三宿主原生工作流的实现方式。
