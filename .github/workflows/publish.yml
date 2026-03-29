@@ -46,8 +46,8 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@latest && npm --version
+      - name: Ensure npm 11 for trusted publishing
+        run: npm install -g npm@11 && npm --version
 
       - name: Parse tag
         id: tag
@@ -130,8 +130,8 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@latest && npm --version
+      - name: Ensure npm 11 for trusted publishing
+        run: npm install -g npm@11 && npm --version
 
       - name: Set beta version in package.json
         if: needs.prepare.outputs.is_beta == 'true'
