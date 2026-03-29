@@ -50,7 +50,7 @@ function readDocPreview(docEntries, cwd) {
 }
 
 function normalizePathHint(rawValue) {
-  const trimmed = String(rawValue || "").trim().replace(/^["'`(<\[]+|[>"'`)\].,;:]+$/g, "");
+  const trimmed = String(rawValue || "").trim().replace(/^[:"'`(<\[：]+|[>"'`)\].,;:：]+$/g, "");
   if (/^\/[A-Za-z]:[\\/]/.test(trimmed)) {
     return trimmed.slice(1);
   }
@@ -61,7 +61,7 @@ function extractPathHintsFromText(text) {
   const hints = new Set();
   const normalizedText = String(text || "");
   const windowsMatches = normalizedText.match(/\/?[A-Za-z]:[\\/][^\s"'`<>()\]]+/g) || [];
-  const posixMatches = normalizedText.match(/(?:^|[\s("'`])\/[^\s"'`<>()\]]+/g) || [];
+  const posixMatches = normalizedText.match(/(?:^|[\s("'`:：])\/(?!\/)[^\s"'`<>()\]]+/g) || [];
 
   for (const rawMatch of [...windowsMatches, ...posixMatches]) {
     const normalized = normalizePathHint(rawMatch);
