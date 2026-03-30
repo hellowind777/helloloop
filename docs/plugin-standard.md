@@ -133,6 +133,8 @@
 
 - Git tag：`vX.Y.Z` 或 `vX.Y.Z-beta.N`
 - `package.json` 的基础版本必须与 tag 基础版本一致
-- tag 推送后，GitHub Actions 会自动执行测试、`npm pack --dry-run`、`npm publish` 与 GitHub Release
+- 根 manifest、各宿主 manifest 与 npm 包版本必须保持一致
+- tag 推送后，GitHub Actions 会自动执行版本校验、测试、`npm pack --dry-run`、`npm publish` 与 GitHub Release
+- 若测试或预检失败，发布链路会在 npm publish / Release 前直接停止
 
 这就是 `HelloLoop` 当前既符合 `Codex` 最新测试版插件结构，又能兼容三宿主原生工作流的实现方式。

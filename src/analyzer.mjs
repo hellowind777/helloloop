@@ -2,7 +2,14 @@ import path from "node:path";
 
 import { summarizeBacklog, selectNextTask } from "./backlog.mjs";
 import { nowIso, writeJson, writeText, readTextIfExists } from "./common.mjs";
-import { loadPolicy, loadProjectConfig, scaffoldIfMissing, writeStateMarkdown, writeStatus } from "./config.mjs";
+import {
+  loadBacklog,
+  loadPolicy,
+  loadProjectConfig,
+  scaffoldIfMissing,
+  writeStateMarkdown,
+  writeStatus,
+} from "./config.mjs";
 import { createContext } from "./context.mjs";
 import { discoverWorkspace } from "./discovery.mjs";
 import { readDocumentPackets } from "./doc_loader.mjs";
@@ -30,6 +37,84 @@ function renderAnalysisState(context, backlog, analysis) {
     `- 最近结果：${analysis.summary.currentState}`,
     `- 下一建议：${analysis.summary.nextAction}`,
   ].join("\n");
+}
+
+function createEmptyBacklogSummary() {
+  return {
+    total: 0,
+    pending: 0,
+    inProgress: 0,
+    done: 0,
+    failed: 0,
+    blocked: 0,
+  };
+}
+
+function getExistingBacklogSnapshot(context) {
+  try {
+    const backlog = loadBacklog(context);
+    return {
+      summary: summarizeBacklog(backlog),
+      nextTask: selectNextTask(backlog),
+    };
+  } catch {
+    return {
+      summary: createEmptyBacklogSummary(),
+      nextTask: null,
+    };
+  }
+}
+
+function firstMeaningfulLine(text, fallback) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean) || fallback;
+}
+
+function summarizeFailedAnalysisResult(result, fallback) {
+  const combined = [
+    String(result?.stdout || "").trim(),
+    String(result?.stderr || "").trim(),
+  ].filter(Boolean).join("\n\n").trim();
+  return combined || fallback;
+}
+
+function renderAnalysisFailureState(context, backlogSummary, nextTask, failureSummary, runDir = "") {
+  const runDirHint = runDir
+    ? path.relative(context.repoRoot, runDir).replaceAll("\\", "/")
+    : "";
+
+  return [
+    "## 当前状态",
+    `- backlog 文件：${path.relative(context.repoRoot, context.backlogFile).replaceAll("\\", "/")}`,
+    `- 总任务数：${backlogSummary.total}`,
+    `- 已完成：${backlogSummary.done}`,
+    `- 待处理：${backlogSummary.pending}`,
+    `- 进行中：${backlogSummary.inProgress}`,
+    `- 失败：${backlogSummary.failed}`,
+    `- 阻塞：${backlogSummary.blocked}`,
+    `- 当前任务：${nextTask ? nextTask.title : "无"}`,
+    `- 最近结果：${firstMeaningfulLine(failureSummary, "HelloLoop 分析失败")}`,
+    `- 下一建议：${runDirHint ? `先检查 ${runDirHint} 中的日志后再重新执行 npx helloloop` : "修复错误后重新执行 npx helloloop"}`,
+  ].join("\n");
+}
+
+function persistAnalysisFailure(context, failureSummary, runDir = "") {
+  const snapshot = getExistingBacklogSnapshot(context);
+  writeStatus(context, {
+    ok: false,
+    stage: "analysis_failed",
+    taskId: null,
+    taskTitle: "",
+    runDir,
+    summary: snapshot.summary,
+    message: failureSummary,
+  });
+  writeStateMarkdown(
+    context,
+    renderAnalysisFailureState(context, snapshot.summary, snapshot.nextTask, failureSummary, runDir),
+  );
 }
 
 function sanitizeTask(task) {
@@ -186,10 +271,19 @@ async function analyzeResolvedWorkspace(context, discovery, options = {}) {
   });
 
   if (!analysisResult.ok) {
+    const failureSummary = summarizeFailedAnalysisResult(
+      analysisResult,
+      `${engineResolution.displayName} 接续分析失败。`,
+    );
+    persistAnalysisFailure(
+      context,
+      failureSummary,
+      runDir,
+    );
     return {
       ok: false,
       code: "analysis_failed",
-      summary: analysisResult.stderr || analysisResult.stdout || `${engineResolution.displayName} 接续分析失败。`,
+      summary: failureSummary,
       engineResolution,
       discovery,
     };
@@ -199,6 +293,11 @@ async function analyzeResolvedWorkspace(context, discovery, options = {}) {
   try {
     payload = JSON.parse(analysisResult.finalMessage);
   } catch (error) {
+    persistAnalysisFailure(
+      context,
+      `${engineResolution.displayName} 分析结果无法解析为 JSON：${String(error?.message || error || "")}`,
+      runDir,
+    );
     return {
       ok: false,
       code: "invalid_analysis_json",
@@ -208,7 +307,24 @@ async function analyzeResolvedWorkspace(context, discovery, options = {}) {
     };
   }
 
-  const analysis = normalizeAnalysisPayload(payload, discovery.docsEntries);
+  let analysis;
+  try {
+    analysis = normalizeAnalysisPayload(payload, discovery.docsEntries);
+  } catch (error) {
+    persistAnalysisFailure(
+      context,
+      `${engineResolution.displayName} 分析结果无效：${String(error?.message || error || "")}`,
+      runDir,
+    );
+    return {
+      ok: false,
+      code: "invalid_analysis_payload",
+      summary: `${engineResolution.displayName} 分析结果无效：${String(error?.message || error || "")}`,
+      engineResolution,
+      discovery,
+    };
+  }
+
   const backlog = {
     version: 1,
     project: analysis.project,

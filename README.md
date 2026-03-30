@@ -425,6 +425,46 @@ npx helloloop doctor --host all
 npx helloloop doctor --host all --codex-home <CODEX_HOME> --claude-home <CLAUDE_HOME> --gemini-home <GEMINI_HOME>
 ```
 
+## 发布流程
+
+`HelloLoop` 当前采用 **tag 驱动发布**：
+
+1. 先在源码仓库完成版本号更新（`package.json` 与各宿主 manifest 保持一致）
+2. 本地先执行：
+
+```bash
+npm test
+npm pack --dry-run
+```
+
+3. 推送 Git tag：
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+或 beta 版本：
+
+```bash
+git tag vX.Y.Z-beta.N
+git push origin vX.Y.Z-beta.N
+```
+
+随后 GitHub Actions `Publish to npm` 会自动执行：
+
+- tag / 版本一致性校验
+- `npm test`
+- `npm pack --dry-run`
+- `npm publish`
+- GitHub Release
+
+补充说明：
+
+- 正式版本使用 npm `latest` 渠道，beta 版本使用 npm `beta` 渠道
+- 如果测试、版本校验或打包检查失败，npm 发布与 GitHub Release 都不会继续执行
+- `0.8.4` 起已补齐 Codex Structured Outputs 严格 schema 兼容，并修复快退出 CLI 在 CI 中可能触发的 `stdin EPIPE` 问题，避免发布工作流被非业务性故障打断
+
 ## 宿主写入范围
 
 为了方便排查安装 / 更新 / 卸载问题，下面是默认写入位置：

@@ -5,6 +5,9 @@
   "required": [
     "project",
     "summary",
+    "constraints",
+    "requestInterpretation",
+    "repoDecision",
     "tasks"
   ],
   "properties": {
@@ -45,13 +48,19 @@
       }
     },
     "constraints": {
-      "type": "array",
+      "type": [
+        "array",
+        "null"
+      ],
       "items": {
         "type": "string"
       }
     },
     "requestInterpretation": {
-      "type": "object",
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": false,
       "required": [
         "summary",
@@ -78,7 +87,10 @@
       }
     },
     "repoDecision": {
-      "type": "object",
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": false,
       "required": [
         "compatibility",
@@ -122,7 +134,9 @@
           "goal",
           "docs",
           "paths",
-          "acceptance"
+          "acceptance",
+          "dependsOn",
+          "verify"
         ],
         "properties": {
           "id": {

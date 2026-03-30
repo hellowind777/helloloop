@@ -146,6 +146,22 @@ npm test
 npm pack --dry-run
 ```
 
+正式发版通过 Git tag 驱动：
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+beta 发版使用：
+
+```bash
+git tag vX.Y.Z-beta.N
+git push origin vX.Y.Z-beta.N
+```
+
+tag 推送后，GitHub Actions 会自动执行版本校验、`npm test`、`npm pack --dry-run`、`npm publish` 与 GitHub Release；任一步失败都会阻断后续发版动作。
+
 ## 许可证
 
 运行时 bundle 也会携带 `LICENSE`，当前许可证为 `Apache-2.0`。

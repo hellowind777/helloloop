@@ -1,5 +1,13 @@
 # 变更日志
 
+## [0.8.4] - 2026-03-31
+### 调整
+- **[Structured Outputs]**: 修复 Codex 分析/复核 JSON Schema 与严格模式不兼容的问题，避免 `invalid_json_schema` 直接中断
+- **[恢复分类]**: 将 `invalid schema`、`invalid_json_schema`、`response_format` 等错误识别为硬阻塞，避免误走软恢复
+- **[状态可观测性]**: 分析失败时立即写回 `.helloloop/status.json` 与 `STATE.md`，不再停留在初始化假象
+- **[CI/发布]**: 修复快退出 CLI 在 Linux CI 中可能触发的 `stdin EPIPE` 问题，避免 `Publish to npm` 工作流被测试阶段误中断
+- **[文档]**: README 与源码文档补充 tag 驱动的 npm / GitHub Release 发布流程说明
+
 ## [0.8.3] - 2026-03-30
 ### 调整
 - **[README]**: 在文档开头新增醒目的风险提示，明确持续 / 持久任务的不可控风险、备份要求与安全审计建议

@@ -7,6 +7,15 @@ import {
   resolveVerifyShellInvocation,
 } from "./shell_invocation.mjs";
 
+export function isIgnorableStdinError(error) {
+  const code = String(error?.code || "").trim();
+  const message = String(error?.message || "").toLowerCase();
+  return code === "EPIPE"
+    || code === "ERR_STREAM_DESTROYED"
+    || message.includes("broken pipe")
+    || message.includes("write after end");
+}
+
 export function runChild(command, args, options = {}) {
   return new Promise((resolve) => {
     const child = spawn(command, args, {
@@ -98,10 +107,29 @@ export function runChild(command, args, options = {}) {
       emitHeartbeat("running");
     });
 
-    if (options.stdin) {
-      child.stdin.write(options.stdin);
+    child.stdin.on("error", (error) => {
+      if (isIgnorableStdinError(error)) {
+        return;
+      }
+      stderr = [
+        stderr.trim(),
+        `[HelloLoop stdin] ${String(error?.stack || error || "")}`,
+      ].filter(Boolean).join("\n");
+    });
+
+    try {
+      if (options.stdin) {
+        child.stdin.write(options.stdin);
+      }
+      child.stdin.end();
+    } catch (error) {
+      if (!isIgnorableStdinError(error)) {
+        stderr = [
+          stderr.trim(),
+          `[HelloLoop stdin] ${String(error?.stack || error || "")}`,
+        ].filter(Boolean).join("\n");
+      }
     }
-    child.stdin.end();
 
     child.on("error", (error) => {
       if (heartbeatTimer) {

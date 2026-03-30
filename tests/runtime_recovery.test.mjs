@@ -57,6 +57,15 @@ test("运行时恢复分类会把 400 / 鉴权 / 余额错误识别为硬阻塞"
   assert.equal(billingFailure.family, "hard");
 });
 
+test("运行时恢复分类会把 invalid_json_schema 与 response_format 错误识别为硬阻塞", () => {
+  const invalidSchema = classifyRuntimeRecoveryFailure({
+    result: { ok: false, stdout: "{\"error\":{\"message\":\"Invalid schema for response_format 'codex_output_schema'\",\"code\":\"invalid_json_schema\"}}" },
+  });
+
+  assert.equal(invalidSchema.family, "hard");
+  assert.equal(invalidSchema.code, "invalid_request");
+});
+
 test("运行时恢复策略默认符合 hard/soft 双层退避模型", () => {
   const policy = resolveRuntimeRecoveryPolicy({
     runtimeRecovery: {
