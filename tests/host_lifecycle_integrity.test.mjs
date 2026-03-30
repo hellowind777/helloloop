@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { syncUserSettingsFile } from "../src/engine_selection_settings.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -463,6 +464,47 @@ test("install 遇到非法 settings.json 时会备份后重建当前版本结构
     assert.equal(backupFiles.length, 1);
     assert.equal(fs.readFileSync(path.join(helloLoopHome, backupFiles[0]), "utf8"), "{ invalid json }\n");
   } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("settings.json 在首次读取瞬间异常、重读后合法时不会产生备份文件", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-settings-retry-"));
+  const helloLoopHome = path.join(tempRoot, "helloloop-home");
+  const settingsFile = path.join(helloLoopHome, "settings.json");
+  const originalReadFileSync = fs.readFileSync;
+  let firstRead = true;
+
+  writeJson(settingsFile, {
+    defaultEngine: "",
+    lastSelectedEngine: "codex",
+    notifications: {
+      email: {
+        enabled: false,
+      },
+    },
+  });
+
+  fs.readFileSync = ((filePath, ...args) => {
+    if (String(filePath) === settingsFile && firstRead) {
+      firstRead = false;
+      return "{ invalid";
+    }
+    return originalReadFileSync.call(fs, filePath, ...args);
+  });
+
+  try {
+    const result = syncUserSettingsFile({ userSettingsFile: settingsFile });
+    assert.equal(result.action, "synced");
+    assert.equal(result.backupFile, "");
+    assert.equal(result.recoveredAfterRetry, true);
+    const backupFiles = fs.readdirSync(helloLoopHome)
+      .filter((item) => item.startsWith("settings.json.invalid-") && item.endsWith(".bak"));
+    assert.deepEqual(backupFiles, []);
+    const settings = readJson(settingsFile);
+    assert.equal(settings.lastSelectedEngine, "codex");
+  } finally {
+    fs.readFileSync = originalReadFileSync;
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });

@@ -148,6 +148,10 @@ export function saveUserSettings(settings, options = {}) {
   });
 }
 
+function tryParseUserSettingsText(text) {
+  return JSON.parse(String(text || ""));
+}
+
 export function syncUserSettingsFile(options = {}) {
   const settingsFile = resolveUserSettingsFile(options.userSettingsFile);
   const defaults = defaultUserSettings();
@@ -161,12 +165,33 @@ export function syncUserSettingsFile(options = {}) {
     };
   }
 
-  let parsed;
+  const firstText = readText(settingsFile);
   try {
-    parsed = readJson(settingsFile);
+    const parsed = tryParseUserSettingsText(firstText);
+    writeJson(settingsFile, syncUserSettingsShape(parsed));
+    return {
+      settingsFile,
+      action: "synced",
+      backupFile: "",
+    };
   } catch (error) {
+    const retryText = readText(settingsFile);
+    if (retryText !== firstText) {
+      try {
+        const parsed = tryParseUserSettingsText(retryText);
+        writeJson(settingsFile, syncUserSettingsShape(parsed));
+        return {
+          settingsFile,
+          action: "synced",
+          backupFile: "",
+          recoveredAfterRetry: true,
+        };
+      } catch {
+      }
+    }
+
     const backupFile = `${settingsFile}.invalid-${timestampForFile()}.bak`;
-    writeText(backupFile, readText(settingsFile));
+    writeText(backupFile, retryText);
     writeJson(settingsFile, defaults);
     return {
       settingsFile,
@@ -175,11 +200,4 @@ export function syncUserSettingsFile(options = {}) {
       error: String(error?.message || error || ""),
     };
   }
-
-  writeJson(settingsFile, syncUserSettingsShape(parsed));
-  return {
-    settingsFile,
-    action: "synced",
-    backupFile: "",
-  };
 }

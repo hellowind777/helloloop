@@ -294,7 +294,8 @@ npx helloloop install --host all --force
 - `Claude` 会刷新 marketplace、缓存插件目录，以及 `settings.json` / `known_marketplaces.json` / `installed_plugins.json` 中的 `helloloop` 条目
 - `Gemini` 会刷新 `extensions/helloloop/`，不会动同目录下其他扩展
 - 安装 / 升级 / 重装时，会同步校准 `~/.helloloop/settings.json` 的当前版本结构：补齐缺失项、清理未知项、保留已知项现有值
-- 如果 `~/.helloloop/settings.json` 不是合法 JSON，会先备份原文件，再按当前版本结构重建
+- 如果 `~/.helloloop/settings.json` 被确认不是合法 JSON，会先备份原文件，再按当前版本结构重建
+- 如果只是首次读取时出现瞬时异常，但重读后内容合法，则不会误生成备份文件
 - 如果宿主自己的配置 JSON（如 `Codex marketplace.json`、`Claude settings.json`、`known_marketplaces.json`、`installed_plugins.json`）本身已损坏，`HelloLoop` 会先明确报错并停止，不会先清理现有安装再失败
 
 ### 卸载
@@ -442,7 +443,8 @@ npx helloloop doctor --host all --codex-home <CODEX_HOME> --claude-home <CLAUDE_
 
 - 这里不保存项目 backlog、状态、运行记录
 - 安装 / 升级 / 重装时，会对 `settings.json` 做结构校准，但不会校验或篡改你已存在的已知项内容
-- 如果 `settings.json` 非法，会先备份，再重建为当前版本结构
+- 只有在 `settings.json` 被确认非法时，才会先备份，再重建为当前版本结构
+- 如果只是读取瞬时异常、重读后合法，不会误生成 `.bak`
 
 ## `.helloloop/` 状态目录
 
