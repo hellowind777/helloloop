@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import net from "node:net";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -30,6 +31,42 @@ export function spawnHelloLoop(args, options = {}) {
   });
 }
 
+export function spawnHelloLoopAsync(args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("node", [npmBinEntry, ...args], {
+      cwd: options.cwd || repoRoot,
+      env: options.env || process.env,
+      stdio: ["pipe", "pipe", "pipe"],
+      shell: false,
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      resolve({
+        status: code,
+        signal,
+        stdout,
+        stderr,
+      });
+    });
+
+    if (options.input) {
+      child.stdin.write(options.input);
+    }
+    child.stdin.end();
+  });
+}
+
 export function cliExecutable(binDir, commandName) {
   return path.join(binDir, process.platform === "win32" ? `${commandName}.ps1` : commandName);
 }
@@ -41,7 +78,7 @@ export function buildCliEnv(binDir, extra = {}) {
     HELLOLOOP_CODEX_EXECUTABLE: cliExecutable(binDir, "codex"),
     HELLOLOOP_CLAUDE_EXECUTABLE: cliExecutable(binDir, "claude"),
     HELLOLOOP_GEMINI_EXECUTABLE: cliExecutable(binDir, "gemini"),
-    HELLOLOOP_USER_SETTINGS_FILE: path.join(binDir, "user-settings.json"),
+    HELLOLOOP_SETTINGS_FILE: path.join(binDir, "settings.json"),
     ...extra,
   };
 }
@@ -60,12 +97,13 @@ export function createSequencedAgentCli(binDir, commandName, config) {
   const configFile = path.join(binDir, `${commandName}-config.json`);
   const stateFile = path.join(binDir, `${commandName}-state.json`);
   writeJson(configFile, config);
-  writeJson(stateFile, { analyze: 0, execute: 0 });
+  writeJson(stateFile, { analyze: 0, execute: 0, probe: 0 });
 
   writeText(path.join(binDir, `${commandName}-stub.cjs`), `
 const fs = require("node:fs");
 const path = require("node:path");
 const args = process.argv.slice(2);
+const stdin = fs.readFileSync(0, "utf8");
 const config = JSON.parse(fs.readFileSync(${JSON.stringify(configFile)}, "utf8"));
 const state = JSON.parse(fs.readFileSync(${JSON.stringify(stateFile)}, "utf8"));
 
@@ -74,6 +112,9 @@ function saveState(nextState) {
 }
 
 function phaseForCommand() {
+  if (stdin.includes("HELLOLOOP_ENGINE_HEALTH_PROBE")) {
+    return "probe";
+  }
   if (${JSON.stringify(commandName)} === "codex") {
     return args.includes("--output-schema") ? "analyze" : "execute";
   }
@@ -115,10 +156,10 @@ if (${JSON.stringify(commandName)} === "codex") {
     fs.mkdirSync(path.dirname(args[outputIndex + 1]), { recursive: true });
     const content = phase === "analyze"
       ? JSON.stringify(entry.payload || {})
-      : String(entry.finalMessage || "任务执行完成");
+      : String(entry.finalMessage || (phase === "probe" ? "HELLOLOOP_ENGINE_OK" : "任务执行完成"));
     fs.writeFileSync(args[outputIndex + 1], content, "utf8");
   }
-  process.stdout.write(entry.stdoutText || (phase === "analyze" ? "analysis ok\\n" : "exec ok\\n"));
+  process.stdout.write(entry.stdoutText || (phase === "analyze" ? "analysis ok\\n" : (phase === "probe" ? "probe ok\\n" : "exec ok\\n")));
   process.exit(0);
 }
 
@@ -127,7 +168,7 @@ if (phase === "analyze") {
   process.exit(0);
 }
 
-process.stdout.write(String(entry.finalMessage || "任务执行完成"));
+process.stdout.write(String(entry.finalMessage || (phase === "probe" ? "HELLOLOOP_ENGINE_OK" : "任务执行完成")));
 `);
 
   if (process.platform === "win32") {
@@ -199,4 +240,87 @@ export function createDemoRepo(tempRoot) {
   writeText(path.join(tempRepo, "src", "index.js"), "console.log('hello');\n");
   writeText(path.join(tempRepo, ".helloagents", "verify.yaml"), "commands:\n  - node --version\n");
   return tempRepo;
+}
+
+export async function createSmtpCaptureServer() {
+  const messages = [];
+  const server = net.createServer((socket) => {
+    socket.setEncoding("utf8");
+    socket.write("220 helloloop test smtp\r\n");
+
+    let buffer = "";
+    let dataMode = false;
+    let message = "";
+
+    function write(code, text) {
+      socket.write(`${code} ${text}\r\n`);
+    }
+
+    function handleLine(line) {
+      const upper = line.toUpperCase();
+      if (dataMode) {
+        if (line === ".") {
+          dataMode = false;
+          messages.push(message);
+          message = "";
+          write(250, "queued");
+          return;
+        }
+        message += `${line}\n`;
+        return;
+      }
+
+      if (upper.startsWith("EHLO")) {
+        socket.write("250-localhost\r\n250 OK\r\n");
+        return;
+      }
+      if (upper.startsWith("MAIL FROM")) {
+        write(250, "ok");
+        return;
+      }
+      if (upper.startsWith("RCPT TO")) {
+        write(250, "ok");
+        return;
+      }
+      if (upper === "DATA") {
+        dataMode = true;
+        write(354, "end with <CRLF>.<CRLF>");
+        return;
+      }
+      if (upper === "QUIT") {
+        write(221, "bye");
+        socket.end();
+        return;
+      }
+      write(250, "ok");
+    }
+
+    socket.on("data", (chunk) => {
+      buffer += chunk;
+      while (true) {
+        const separatorIndex = buffer.indexOf("\n");
+        if (separatorIndex < 0) {
+          return;
+        }
+        const line = buffer.slice(0, separatorIndex + 1).replace(/\r?\n$/, "");
+        buffer = buffer.slice(separatorIndex + 1);
+        handleLine(line);
+      }
+    });
+  });
+
+  await new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+
+  return {
+    host: "127.0.0.1",
+    port: server.address().port,
+    messages,
+    async close() {
+      await new Promise((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    },
+  };
 }

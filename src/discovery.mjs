@@ -1,3 +1,4 @@
+import os from "node:os";
 import path from "node:path";
 
 import { expandDocumentEntries } from "./doc_loader.mjs";
@@ -48,6 +49,11 @@ const DOCS_SOURCE_META = {
   existing_state: { label: "已有 .helloloop 配置", confidence: "medium" },
   repo_docs: { label: "仓库 docs 目录", confidence: "medium" },
 };
+
+function isImplicitHomeDirectory(targetPath) {
+  return Boolean(targetPath)
+    && path.resolve(targetPath) === path.resolve(os.homedir());
+}
 
 function pushBasis(basis, message) {
   if (message && !basis.includes(message)) {
@@ -127,6 +133,10 @@ export function discoverWorkspace(options = {}) {
   const explicitRepoRoot = options.repoRoot ? resolveAbsolute(options.repoRoot, cwd) : "";
   const explicitDocsPath = options.docsPath ? resolveAbsolute(options.docsPath, cwd) : "";
   const explicitInputPath = options.inputPath ? resolveAbsolute(options.inputPath, cwd) : "";
+  const treatCwdAsHomeWorkspace = !explicitRepoRoot
+    && !explicitDocsPath
+    && !explicitInputPath
+    && isImplicitHomeDirectory(cwd);
 
   if (explicitRepoRoot && !pathExists(explicitRepoRoot)) {
     if (!allowNewRepoRoot) {
@@ -196,13 +206,15 @@ export function discoverWorkspace(options = {}) {
   }
 
   if (!repoRoot && !docsEntries.length) {
-    const cwdRepoRoot = findRepoRootFromPath(cwd);
+    const cwdRepoRoot = treatCwdAsHomeWorkspace ? "" : findRepoRootFromPath(cwd);
     if (cwdRepoRoot) {
       repoRoot = cwdRepoRoot;
       repoSource = "cwd_repo";
       pushBasis(repoBasis, "当前终端目录已经位于一个项目仓库内。");
     } else {
-      const cwdClassified = classifyExplicitPath(cwd);
+      const cwdClassified = treatCwdAsHomeWorkspace
+        ? { kind: "workspace", absolutePath: cwd }
+        : classifyExplicitPath(cwd);
       if (cwdClassified.kind === "docs") {
         docsEntries = [cwdClassified.absolutePath];
         docsSource = "cwd_docs";
@@ -371,6 +383,13 @@ export function resolveRepoRoot(options = {}) {
       return { ok: true, repoRoot: inferred.repoRoot };
     }
     return { ok: false, message: renderMissingRepoMessage([classified.absolutePath], inferred.candidates) };
+  }
+
+  if (!explicitRepoRoot && !explicitInputPath && isImplicitHomeDirectory(cwd)) {
+    return {
+      ok: false,
+      message: "当前目录看起来是用户主目录；HelloLoop 不会把主目录自动当作项目仓库。请切到项目目录，或传入一个项目路径/开发文档路径。",
+    };
   }
 
   const repoRoot = findRepoRootFromPath(cwd);

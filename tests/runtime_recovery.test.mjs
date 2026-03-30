@@ -1,74 +1,70 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { classifyRuntimeRecoveryFailure, resolveRuntimeRecoveryPolicy } from "../src/runtime_recovery.mjs";
+import {
+  classifyRuntimeRecoveryFailure,
+  getRuntimeRecoverySchedule,
+  resolveRuntimeRecoveryPolicy,
+} from "../src/runtime_recovery.mjs";
 
-test("运行时恢复分类会把 429 / 5xx / 网络中断识别为可自动恢复", () => {
-  const policy = resolveRuntimeRecoveryPolicy();
-
+test("运行时恢复分类会把 429 / 5xx / 网络中断识别为软阻塞", () => {
   const rateLimit = classifyRuntimeRecoveryFailure({
-    recoveryPolicy: policy,
     result: { ok: false, stderr: "429 rate limit exceeded" },
   });
   const server = classifyRuntimeRecoveryFailure({
-    recoveryPolicy: policy,
     result: { ok: false, stderr: "503 service unavailable" },
   });
   const network = classifyRuntimeRecoveryFailure({
-    recoveryPolicy: policy,
     result: { ok: false, stderr: "socket hang up" },
   });
 
-  assert.equal(rateLimit.recoverable, true);
-  assert.equal(server.recoverable, true);
-  assert.equal(network.recoverable, true);
+  assert.equal(rateLimit.family, "soft");
+  assert.equal(server.family, "soft");
+  assert.equal(network.family, "soft");
 });
 
-test("运行时恢复分类会把 watchdog 空转视为可自动恢复", () => {
-  const policy = resolveRuntimeRecoveryPolicy();
+test("运行时恢复分类会把 watchdog 空转视为软阻塞", () => {
   const failure = classifyRuntimeRecoveryFailure({
-    recoveryPolicy: policy,
     result: { ok: false, watchdogTriggered: true, watchdogReason: "长时间无输出" },
   });
 
-  assert.equal(failure.recoverable, true);
+  assert.equal(failure.family, "soft");
   assert.equal(failure.code, "watchdog_idle");
 });
 
-test("运行时恢复分类对未知错误只会保守自动恢复一次", () => {
-  const policy = resolveRuntimeRecoveryPolicy({
-    runtimeRecovery: {
-      maxUnknownRecoveries: 1,
-    },
-  });
-
-  const firstFailure = classifyRuntimeRecoveryFailure({
-    recoveryPolicy: policy,
-    recoveryCount: 0,
-    result: { ok: false, stderr: "mystery transport broke" },
-  });
-  const secondFailure = classifyRuntimeRecoveryFailure({
-    recoveryPolicy: policy,
-    recoveryCount: 1,
+test("运行时恢复分类会把未知错误归到软阻塞探测链路", () => {
+  const failure = classifyRuntimeRecoveryFailure({
     result: { ok: false, stderr: "mystery transport broke" },
   });
 
-  assert.equal(firstFailure.recoverable, true);
-  assert.equal(secondFailure.recoverable, false);
+  assert.equal(failure.family, "soft");
+  assert.equal(failure.code, "unknown_failure");
 });
 
-test("运行时恢复分类会把 400 / 鉴权错误识别为不可自动恢复", () => {
-  const policy = resolveRuntimeRecoveryPolicy();
-
+test("运行时恢复分类会把 400 / 鉴权 / 余额错误识别为硬阻塞", () => {
   const invalidRequest = classifyRuntimeRecoveryFailure({
-    recoveryPolicy: policy,
     result: { ok: false, stderr: "400 bad request: invalid schema" },
   });
   const authFailure = classifyRuntimeRecoveryFailure({
-    recoveryPolicy: policy,
     result: { ok: false, stderr: "not authenticated, please login" },
   });
+  const billingFailure = classifyRuntimeRecoveryFailure({
+    result: { ok: false, stderr: "payment required: insufficient balance" },
+  });
 
-  assert.equal(invalidRequest.recoverable, false);
-  assert.equal(authFailure.recoverable, false);
+  assert.equal(invalidRequest.family, "hard");
+  assert.equal(authFailure.family, "hard");
+  assert.equal(billingFailure.family, "hard");
+});
+
+test("运行时恢复策略默认符合 hard/soft 双层退避模型", () => {
+  const policy = resolveRuntimeRecoveryPolicy({
+    runtimeRecovery: {
+      hardRetryDelaysSeconds: [900, 900, 900, 900, 900],
+      softRetryDelaysSeconds: [900, 900, 900, 900, 900, 1800, 1800, 3600, 5400, 7200, 9000, 10800],
+    },
+  });
+
+  assert.deepEqual(getRuntimeRecoverySchedule(policy, "hard"), [900, 900, 900, 900, 900]);
+  assert.deepEqual(getRuntimeRecoverySchedule(policy, "soft"), [900, 900, 900, 900, 900, 1800, 1800, 3600, 5400, 7200, 9000, 10800]);
 });

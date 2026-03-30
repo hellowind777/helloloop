@@ -1,6 +1,6 @@
 ---
 name: helloloop
-description: 当用户希望 Codex 先分析仓库当前进度、生成确认单，再自动按 backlog 持续接续开发时使用。
+description: 仅当用户显式调用 `$helloloop` / `#helloloop` / `helloloop:helloloop`，或明确要求使用 HelloLoop 按开发文档持续接续开发时使用。
 ---
 
 # HelloLoop
@@ -9,6 +9,7 @@ description: 当用户希望 Codex 先分析仓库当前进度、生成确认单
 
 ## 强制入口规则
 
+- 未显式调用 `helloloop`，且用户也没有明确要求“使用 HelloLoop / 使用 helloloop 插件 / 走 HelloLoop 流程”时，不允许接管普通 Codex 会话。
 - 用户显式调用 `$helloloop` / `#helloloop` / `helloloop:helloloop` 时，默认必须优先执行 `npx helloloop` 或 `npx helloloop <PATH>`；如果用户又明确指定了执行引擎，也允许使用 `npx helloloop codex|claude|gemini ...`。
 - 用户没有明确指定执行引擎时，不允许由 skill 自行补成 `codex` / `claude` / `gemini`；必须让 `HelloLoop` 先完成引擎确认。
 - 不允许在对话里手工模拟 `HelloLoop` 的分析、确认单、backlog 编排和自动续跑流程来代替 CLI。
@@ -74,8 +75,8 @@ description: 当用户希望 Codex 先分析仓库当前进度、生成确认单
 - 每个任务在执行引擎声称“完成”后，还必须再过一层任务完成复核；如果只是部分完成，继续当前主线任务，不直接结束。
 - 用户需求明确且当前任务可直接完成时，必须一次性完成本轮应交付的全部工作；禁止做一半后用“如果你要”“是否继续”之类的话术停下，也禁止用客套套话收尾。
 - 真正的代码分析与实现由本轮选中的 `codex` / `claude` / `gemini` CLI 原生完成。
-- 如果当前引擎在运行中遇到 429、5xx、网络抖动、流中断或长时间卡死，必须优先按无人值守策略做同引擎自动恢复，不要中途停下来询问用户。
-- 只有识别为 400 请求错误、登录/鉴权/订阅问题、本地 CLI 缺失或权限错误等硬阻塞时，才允许结束本轮自动执行。
+- 如果当前引擎在运行中遇到 400、鉴权、余额、429、5xx、网络抖动、流中断或长时间卡死，必须优先按无人值守策略做同引擎“健康探测 + 条件恢复”，不要中途停下来询问用户，也不要自动切换引擎。
+- 只有当硬阻塞或软阻塞的自动恢复额度真正用尽时，才允许结束本轮自动执行；若用户已在 `~/.helloloop/settings.json` 配置邮箱通知，则结束前发送告警邮件。
 - `$helloloop` 的职责是把用户请求路由到主 CLI 流程，而不是在对话里手工复刻一套平行流程。
 
 ## 核心命令

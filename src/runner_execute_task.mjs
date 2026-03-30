@@ -14,7 +14,6 @@ import {
   buildDoneResult,
   buildFailureResult,
   bumpFailureForNextStrategy,
-  maybeSwitchEngine,
   recordFailure,
   resolveExecutionSetup,
 } from "./runner_execution_support.mjs";
@@ -37,36 +36,16 @@ async function handleEngineFailure(execution, state, attemptState, engineResult)
     state.engineResolution.engine,
     previousFailure,
   );
-
-  const nextResolution = await maybeSwitchEngine(execution, state.engineResolution, previousFailure, "执行阶段");
-  if (nextResolution) {
-    return { action: "switch", previousFailure, engineResolution: nextResolution };
-  }
-  if (engineResult.recoveryFailure?.recoverable === false) {
-    return {
-      action: "return",
-      result: buildFailureResult(
-        execution,
-        "engine-failed",
-        previousFailure,
-        state.failureHistory.length,
-        state.engineResolution,
-      ),
-    };
-  }
-  if (isHardStopFailure("engine", previousFailure)) {
-    return {
-      action: "return",
-      result: buildFailureResult(
-        execution,
-        "engine-failed",
-        previousFailure,
-        state.failureHistory.length,
-        state.engineResolution,
-      ),
-    };
-  }
-  return { action: "continue", previousFailure };
+  return {
+    action: "return",
+    result: buildFailureResult(
+      execution,
+      "engine-failed",
+      previousFailure,
+      state.failureHistory.length,
+      state.engineResolution,
+    ),
+  };
 }
 
 function handleVerifyFailure(execution, state, attemptState, verifyResult) {
@@ -91,36 +70,16 @@ function handleVerifyFailure(execution, state, attemptState, verifyResult) {
 async function handleReviewFailure(execution, state, attemptState, reviewResult) {
   const previousFailure = reviewResult.summary;
   recordFailure(state.failureHistory, attemptState.strategyIndex, attemptState.attemptIndex, "task_review", previousFailure);
-
-  const nextResolution = await maybeSwitchEngine(execution, state.engineResolution, previousFailure, "任务复核阶段");
-  if (nextResolution) {
-    return { action: "switch", previousFailure, engineResolution: nextResolution };
-  }
-  if (reviewResult.raw?.recoveryFailure?.recoverable === false) {
-    return {
-      action: "return",
-      result: buildFailureResult(
-        execution,
-        "task-review-failed",
-        previousFailure,
-        state.failureHistory.length,
-        state.engineResolution,
-      ),
-    };
-  }
-  if (isHardStopFailure("review", previousFailure)) {
-    return {
-      action: "return",
-      result: buildFailureResult(
-        execution,
-        "task-review-failed",
-        previousFailure,
-        state.failureHistory.length,
-        state.engineResolution,
-      ),
-    };
-  }
-  return { action: "continue", previousFailure };
+  return {
+    action: "return",
+    result: buildFailureResult(
+      execution,
+      "task-review-failed",
+      previousFailure,
+      state.failureHistory.length,
+      state.engineResolution,
+    ),
+  };
 }
 
 function handleIncompleteReview(execution, state, attemptState, reviewResult) {
@@ -268,11 +227,6 @@ export async function executeSingleTask(context, options = {}) {
         state,
         buildAttemptState(execution.runDir, strategyIndex, attemptIndex, makeAttemptDir),
       );
-      if (outcome.action === "switch") {
-        state.previousFailure = outcome.previousFailure;
-        state.engineResolution = outcome.engineResolution;
-        continue;
-      }
       if (outcome.action === "continue") {
         state.previousFailure = outcome.previousFailure;
         continue;

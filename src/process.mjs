@@ -1,11 +1,20 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
 
 import { ensureDir, nowIso, tailText, writeJson, writeText } from "./common.mjs";
 import { getEngineDisplayName, normalizeEngineName } from "./engine_metadata.mjs";
-import { resolveCliInvocation, resolveCodexInvocation, resolveVerifyShellInvocation } from "./shell_invocation.mjs";
 import {
+  buildClaudeArgs,
+  buildCodexArgs,
+  buildGeminiArgs,
+  resolveEngineInvocation,
+  resolveVerifyInvocation,
+  runChild,
+} from "./engine_process_support.mjs";
+import { sendRuntimeStopNotification } from "./email_notification.mjs";
+import { loadGlobalConfig } from "./global_config.mjs";
+import {
+  buildEngineHealthProbePrompt,
   buildRuntimeRecoveryPrompt,
   classifyRuntimeRecoveryFailure,
   renderRuntimeRecoverySummary,
@@ -30,154 +39,6 @@ function createRuntimeStatusWriter(runtimeStatusFile, baseState) {
   };
 }
 
-function runChild(command, args, options = {}) {
-  return new Promise((resolve) => {
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      env: {
-        ...process.env,
-        ...(options.env || {}),
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-      shell: Boolean(options.shell),
-    });
-
-    let stdout = "";
-    let stderr = "";
-    let stdoutBytes = 0;
-    let stderrBytes = 0;
-    const startedAt = Date.now();
-    let lastOutputAt = startedAt;
-    let watchdogTriggered = false;
-    let watchdogReason = "";
-    let stallWarned = false;
-    let killTimer = null;
-
-    const emitHeartbeat = (status, extra = {}) => {
-      options.onHeartbeat?.({
-        status,
-        pid: child.pid ?? null,
-        startedAt: new Date(startedAt).toISOString(),
-        lastOutputAt: new Date(lastOutputAt).toISOString(),
-        stdoutBytes,
-        stderrBytes,
-        idleSeconds: Math.max(0, Math.floor((Date.now() - lastOutputAt) / 1000)),
-        watchdogTriggered,
-        watchdogReason,
-        ...extra,
-      });
-    };
-
-    const heartbeatIntervalMs = Math.max(100, Number(options.heartbeatIntervalMs || 0));
-    const stallWarningMs = Math.max(0, Number(options.stallWarningMs || 0));
-    const maxIdleMs = Math.max(0, Number(options.maxIdleMs || 0));
-    const killGraceMs = Math.max(100, Number(options.killGraceMs || 1000));
-
-    const heartbeatTimer = heartbeatIntervalMs > 0
-      ? setInterval(() => {
-        const idleMs = Date.now() - lastOutputAt;
-        if (stallWarningMs > 0 && idleMs >= stallWarningMs && !stallWarned) {
-          stallWarned = true;
-          emitHeartbeat("suspected_stall", {
-            message: `当前子进程已连续 ${Math.floor(idleMs / 1000)} 秒没有可见输出，继续观察。`,
-          });
-        }
-
-        if (maxIdleMs > 0 && idleMs >= maxIdleMs && !watchdogTriggered) {
-          watchdogTriggered = true;
-          watchdogReason = `当前子进程已连续 ${Math.floor(idleMs / 1000)} 秒没有可见输出。`;
-          stderr = [
-            stderr.trim(),
-            `[HelloLoop watchdog] ${watchdogReason}`,
-          ].filter(Boolean).join("\n");
-          emitHeartbeat("watchdog_terminating", {
-            message: "已达到无人值守恢复阈值，准备终止当前子进程并发起同引擎恢复。",
-          });
-          child.kill();
-          killTimer = setTimeout(() => {
-            child.kill("SIGKILL");
-          }, killGraceMs);
-          return;
-        }
-
-        emitHeartbeat(watchdogTriggered ? "watchdog_waiting" : "running");
-      }, heartbeatIntervalMs)
-      : null;
-
-    emitHeartbeat("running");
-
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-      stdoutBytes += chunk.length;
-      lastOutputAt = Date.now();
-      stallWarned = false;
-      emitHeartbeat("running");
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-      stderrBytes += chunk.length;
-      lastOutputAt = Date.now();
-      stallWarned = false;
-      emitHeartbeat("running");
-    });
-
-    if (options.stdin) {
-      child.stdin.write(options.stdin);
-    }
-    child.stdin.end();
-
-    child.on("error", (error) => {
-      if (heartbeatTimer) {
-        clearInterval(heartbeatTimer);
-      }
-      if (killTimer) {
-        clearTimeout(killTimer);
-      }
-      emitHeartbeat("failed", {
-        code: 1,
-        signal: "",
-      });
-      resolve({
-        ok: false,
-        code: 1,
-        stdout,
-        stderr: String(error?.stack || error || ""),
-        signal: "",
-        startedAt: new Date(startedAt).toISOString(),
-        finishedAt: nowIso(),
-        idleTimeout: watchdogTriggered,
-        watchdogTriggered,
-        watchdogReason,
-      });
-    });
-
-    child.on("close", (code, signal) => {
-      if (heartbeatTimer) {
-        clearInterval(heartbeatTimer);
-      }
-      if (killTimer) {
-        clearTimeout(killTimer);
-      }
-      emitHeartbeat(code === 0 ? "completed" : "failed", {
-        code: code ?? 1,
-        signal: signal || "",
-      });
-      resolve({
-        ok: code === 0,
-        code: code ?? 1,
-        stdout,
-        stderr,
-        signal: signal || "",
-        startedAt: new Date(startedAt).toISOString(),
-        finishedAt: nowIso(),
-        idleTimeout: watchdogTriggered,
-        watchdogTriggered,
-        watchdogReason,
-      });
-    });
-  });
-}
-
 function writeEngineRunArtifacts(runDir, prefix, result, finalMessage) {
   writeText(path.join(runDir, `${prefix}-stdout.log`), result.stdout);
   writeText(path.join(runDir, `${prefix}-stderr.log`), result.stderr);
@@ -188,140 +49,6 @@ function writeEngineRunArtifacts(runDir, prefix, result, finalMessage) {
     "",
     finalMessage,
   ].join("\n"));
-}
-
-function readSchemaText(outputSchemaFile = "") {
-  return outputSchemaFile && fs.existsSync(outputSchemaFile)
-    ? fs.readFileSync(outputSchemaFile, "utf8").trim()
-    : "";
-}
-
-function resolveEngineInvocation(engine, explicitExecutable = "") {
-  const envExecutable = String(process.env[`HELLOLOOP_${String(engine || "").toUpperCase()}_EXECUTABLE`] || "").trim();
-  const executable = envExecutable || explicitExecutable;
-  if (engine === "codex") {
-    return resolveCodexInvocation({ explicitExecutable: executable });
-  }
-
-  const meta = {
-    claude: {
-      commandName: "claude",
-      displayName: "Claude",
-    },
-    gemini: {
-      commandName: "gemini",
-      displayName: "Gemini",
-    },
-  }[engine];
-
-  if (!meta) {
-    return {
-      command: "",
-      argsPrefix: [],
-      shell: false,
-      error: `不支持的执行引擎：${engine}`,
-    };
-  }
-
-  return resolveCliInvocation({
-    commandName: meta.commandName,
-    toolDisplayName: meta.displayName,
-    explicitExecutable: executable,
-  });
-}
-
-function buildCodexArgs({
-  context,
-  model = "",
-  sandbox = "workspace-write",
-  dangerouslyBypassSandbox = false,
-  jsonOutput = true,
-  outputSchemaFile = "",
-  ephemeral = false,
-  skipGitRepoCheck = false,
-  lastMessageFile,
-}) {
-  const codexArgs = ["exec", "-C", context.repoRoot];
-
-  if (model) {
-    codexArgs.push("--model", model);
-  }
-  if (dangerouslyBypassSandbox) {
-    codexArgs.push("--dangerously-bypass-approvals-and-sandbox");
-  } else {
-    codexArgs.push("--sandbox", sandbox);
-  }
-  if (skipGitRepoCheck) {
-    codexArgs.push("--skip-git-repo-check");
-  }
-  if (ephemeral) {
-    codexArgs.push("--ephemeral");
-  }
-  if (outputSchemaFile) {
-    codexArgs.push("--output-schema", outputSchemaFile);
-  }
-  if (jsonOutput) {
-    codexArgs.push("--json");
-  }
-  codexArgs.push("-o", lastMessageFile, "-");
-  return codexArgs;
-}
-
-function buildClaudeArgs({
-  model = "",
-  outputSchemaFile = "",
-  executionMode = "analyze",
-  policy = {},
-}) {
-  const args = [
-    "-p",
-    executionMode === "analyze"
-      ? "请读取标准输入中的完整分析任务并直接输出最终结果。"
-      : "请读取标准输入中的完整开发任务并直接完成它。",
-    "--output-format",
-    policy.outputFormat || "text",
-    "--permission-mode",
-    executionMode === "analyze"
-      ? (policy.analysisPermissionMode || "plan")
-      : (policy.permissionMode || "bypassPermissions"),
-    "--no-session-persistence",
-  ];
-
-  if (model) {
-    args.push("--model", model);
-  }
-
-  const schemaText = readSchemaText(outputSchemaFile);
-  if (schemaText) {
-    args.push("--json-schema", schemaText);
-  }
-
-  return args;
-}
-
-function buildGeminiArgs({
-  model = "",
-  executionMode = "analyze",
-  policy = {},
-}) {
-  const args = [
-    "-p",
-    executionMode === "analyze"
-      ? "请读取标准输入中的完整分析任务并直接输出最终结果。"
-      : "请读取标准输入中的完整开发任务并直接完成它。",
-    "--output-format",
-    policy.outputFormat || "text",
-    "--approval-mode",
-    executionMode === "analyze"
-      ? (policy.analysisApprovalMode || "plan")
-      : (policy.approvalMode || "yolo"),
-  ];
-
-  if (model) {
-    args.push("--model", model);
-  }
-
-  return args;
 }
 
 function resolveEnginePolicy(policy = {}, engine) {
@@ -335,6 +62,247 @@ function resolveEnginePolicy(policy = {}, engine) {
     return policy.gemini || {};
   }
   return {};
+}
+
+function buildEngineArgs({
+  engine,
+  context,
+  resolvedPolicy,
+  executionMode,
+  outputSchemaFile,
+  ephemeral,
+  skipGitRepoCheck,
+  lastMessageFile,
+  probeMode = false,
+}) {
+  if (engine === "codex") {
+    return buildCodexArgs({
+      context,
+      model: resolvedPolicy.model,
+      sandbox: resolvedPolicy.sandbox,
+      dangerouslyBypassSandbox: resolvedPolicy.dangerouslyBypassSandbox,
+      jsonOutput: probeMode ? false : (resolvedPolicy.jsonOutput !== false),
+      outputSchemaFile: probeMode ? "" : outputSchemaFile,
+      ephemeral,
+      skipGitRepoCheck,
+      lastMessageFile,
+    });
+  }
+
+  if (engine === "claude") {
+    return buildClaudeArgs({
+      model: resolvedPolicy.model,
+      outputSchemaFile: probeMode ? "" : outputSchemaFile,
+      executionMode: probeMode ? "execute" : executionMode,
+      policy: resolvedPolicy,
+    });
+  }
+
+  return buildGeminiArgs({
+    model: resolvedPolicy.model,
+    executionMode: probeMode ? "execute" : executionMode,
+    policy: resolvedPolicy,
+  });
+}
+
+function readEngineFinalMessage(engine, lastMessageFile, result) {
+  if (engine === "codex") {
+    return fs.existsSync(lastMessageFile)
+      ? fs.readFileSync(lastMessageFile, "utf8").trim()
+      : "";
+  }
+  return String(result.stdout || "").trim();
+}
+
+async function runEngineAttempt({
+  engine,
+  invocation,
+  context,
+  prompt,
+  runDir,
+  attemptPrefix,
+  resolvedPolicy,
+  executionMode,
+  outputSchemaFile,
+  env,
+  recoveryPolicy,
+  writeRuntimeStatus,
+  recoveryCount,
+  recoveryHistory,
+  ephemeral = false,
+  skipGitRepoCheck = false,
+  probeMode = false,
+}) {
+  const attemptPromptFile = path.join(runDir, `${attemptPrefix}-prompt.md`);
+  const attemptLastMessageFile = path.join(runDir, `${attemptPrefix}-last-message.txt`);
+
+  if (invocation.error) {
+    const result = {
+      ok: false,
+      code: 1,
+      stdout: "",
+      stderr: invocation.error,
+      signal: "",
+      startedAt: nowIso(),
+      finishedAt: nowIso(),
+      idleTimeout: false,
+      watchdogTriggered: false,
+      watchdogReason: "",
+    };
+    writeText(attemptPromptFile, prompt);
+    writeEngineRunArtifacts(runDir, attemptPrefix, result, "");
+    return {
+      result,
+      finalMessage: "",
+      attemptPrefix,
+    };
+  }
+
+  const finalArgs = [
+    ...invocation.argsPrefix,
+    ...buildEngineArgs({
+      engine,
+      context,
+      resolvedPolicy,
+      executionMode,
+      outputSchemaFile,
+      ephemeral,
+      skipGitRepoCheck,
+      lastMessageFile: attemptLastMessageFile,
+      probeMode,
+    }),
+  ];
+
+  writeRuntimeStatus(probeMode ? "probe_running" : (recoveryCount > 0 ? "recovering" : "running"), {
+    attemptPrefix,
+    recoveryCount,
+    recoveryHistory,
+  });
+
+  const result = await runChild(invocation.command, finalArgs, {
+    cwd: context.repoRoot,
+    stdin: prompt,
+    env,
+    shell: invocation.shell,
+    heartbeatIntervalMs: recoveryPolicy.heartbeatIntervalSeconds * 1000,
+    stallWarningMs: recoveryPolicy.stallWarningSeconds * 1000,
+    maxIdleMs: recoveryPolicy.maxIdleSeconds * 1000,
+    killGraceMs: recoveryPolicy.killGraceSeconds * 1000,
+    onHeartbeat(payload) {
+      writeRuntimeStatus(payload.status, {
+        attemptPrefix,
+        recoveryCount,
+        recoveryHistory,
+        heartbeat: payload,
+      });
+    },
+  });
+  const finalMessage = readEngineFinalMessage(engine, attemptLastMessageFile, result);
+
+  writeText(attemptPromptFile, prompt);
+  writeEngineRunArtifacts(runDir, attemptPrefix, result, finalMessage);
+
+  return {
+    result,
+    finalMessage,
+    attemptPrefix,
+  };
+}
+
+async function runEngineHealthProbe({
+  engine,
+  invocation,
+  context,
+  runDir,
+  resolvedPolicy,
+  recoveryPolicy,
+  writeRuntimeStatus,
+  recoveryCount,
+  recoveryHistory,
+  env,
+  probeIndex,
+}) {
+  const probePrompt = buildEngineHealthProbePrompt(engine);
+  const attemptPrefix = `${engine}-probe-${String(probeIndex).padStart(2, "0")}`;
+  writeRuntimeStatus("probe_waiting", {
+    attemptPrefix,
+    recoveryCount,
+    recoveryHistory,
+  });
+  const attempt = await runEngineAttempt({
+    engine,
+    invocation,
+    context,
+    prompt: probePrompt,
+    runDir,
+    attemptPrefix,
+    resolvedPolicy,
+    executionMode: "execute",
+    outputSchemaFile: "",
+    env,
+    recoveryPolicy: {
+      ...recoveryPolicy,
+      maxIdleSeconds: recoveryPolicy.healthProbeTimeoutSeconds,
+    },
+    writeRuntimeStatus,
+    recoveryCount,
+    recoveryHistory,
+    ephemeral: true,
+    skipGitRepoCheck: true,
+    probeMode: true,
+  });
+
+  return {
+    ...attempt,
+    failure: classifyRuntimeRecoveryFailure({
+      result: {
+        ...attempt.result,
+        finalMessage: attempt.finalMessage,
+      },
+    }),
+  };
+}
+
+async function maybeSendStopNotification({
+  context,
+  runDir,
+  engine,
+  executionMode,
+  failure,
+  result,
+  recoveryHistory,
+}) {
+  try {
+    return await sendRuntimeStopNotification({
+      globalConfig: loadGlobalConfig(),
+      context,
+      engine: getEngineDisplayName(engine),
+      phase: executionMode === "analyze" ? "分析/复核" : "执行",
+      failure,
+      result,
+      recoveryHistory,
+      runDir,
+    });
+  } catch (error) {
+    return {
+      attempted: true,
+      delivered: false,
+      reason: String(error?.message || error || "邮件发送失败。"),
+    };
+  }
+}
+
+function buildNotificationNote(notificationResult) {
+  if (!notificationResult) {
+    return "";
+  }
+  if (notificationResult.delivered) {
+    return `告警邮件已发送：${(notificationResult.recipients || []).join(", ")}`;
+  }
+  if (notificationResult.attempted) {
+    return `告警邮件发送失败：${notificationResult.reason || "未知原因"}`;
+  }
+  return `未发送告警邮件：${notificationResult.reason || "未启用"}`;
 }
 
 export async function runEngineTask({
@@ -363,203 +331,259 @@ export async function runEngineTask({
     engineDisplayName: getEngineDisplayName(normalizedEngine),
     phase: executionMode,
     outputPrefix: prefix,
-    maxPhaseRecoveries: recoveryPolicy.maxPhaseRecoveries,
+    hardRetryBudget: recoveryPolicy.hardRetryDelaysSeconds.length,
+    softRetryBudget: recoveryPolicy.softRetryDelaysSeconds.length,
   });
-
-  let args = [];
-  if (normalizedEngine === "claude") {
-    args = buildClaudeArgs({
-      model: resolvedPolicy.model,
-      outputSchemaFile,
-      executionMode,
-      policy: resolvedPolicy,
-    });
-  } else if (normalizedEngine === "gemini") {
-    args = buildGeminiArgs({
-      model: resolvedPolicy.model,
-      executionMode,
-      policy: resolvedPolicy,
-    });
-  }
-
-  if (invocation.error) {
-    const result = {
-      ok: false,
-      code: 1,
-      stdout: "",
-      stderr: invocation.error,
-    };
-    writeText(path.join(runDir, `${prefix}-prompt.md`), prompt);
-    writeEngineRunArtifacts(runDir, prefix, result, "");
-    writeRuntimeStatus("failed", {
-      code: result.code,
-      message: invocation.error,
-      recoveryCount: 0,
-      recoveryHistory: [],
-    });
-    return { ...result, finalMessage: "" };
-  }
 
   const recoveryHistory = [];
   let currentPrompt = prompt;
   let currentRecoveryCount = 0;
+  let activeFailure = null;
 
   while (true) {
     const attemptPrefix = currentRecoveryCount === 0
       ? prefix
       : `${prefix}-recovery-${String(currentRecoveryCount).padStart(2, "0")}`;
-    const attemptPromptFile = path.join(runDir, `${attemptPrefix}-prompt.md`);
-    const attemptLastMessageFile = path.join(runDir, `${attemptPrefix}-last-message.txt`);
-    const finalArgs = normalizedEngine === "codex"
-      ? [
-        ...invocation.argsPrefix,
-        ...buildCodexArgs({
-          context,
-          model: resolvedPolicy.model,
-          sandbox: resolvedPolicy.sandbox,
-          dangerouslyBypassSandbox: resolvedPolicy.dangerouslyBypassSandbox,
-          jsonOutput: resolvedPolicy.jsonOutput !== false,
-          outputSchemaFile,
-          ephemeral,
-          skipGitRepoCheck,
-          lastMessageFile: attemptLastMessageFile,
-        }),
-      ]
-      : [...invocation.argsPrefix, ...args];
-
-    writeRuntimeStatus(currentRecoveryCount > 0 ? "recovering" : "running", {
+    const taskAttempt = await runEngineAttempt({
+      engine: normalizedEngine,
+      invocation,
+      context,
+      prompt: currentPrompt,
+      runDir,
       attemptPrefix,
+      resolvedPolicy,
+      executionMode,
+      outputSchemaFile,
+      env,
+      recoveryPolicy,
+      writeRuntimeStatus,
       recoveryCount: currentRecoveryCount,
       recoveryHistory,
+      ephemeral,
+      skipGitRepoCheck,
+      probeMode: false,
     });
 
-    const result = await runChild(invocation.command, finalArgs, {
-      cwd: context.repoRoot,
-      stdin: currentPrompt,
-      env,
-      shell: invocation.shell,
-      heartbeatIntervalMs: recoveryPolicy.heartbeatIntervalSeconds * 1000,
-      stallWarningMs: recoveryPolicy.stallWarningSeconds * 1000,
-      maxIdleMs: recoveryPolicy.maxIdleSeconds * 1000,
-      killGraceMs: recoveryPolicy.killGraceSeconds * 1000,
-      onHeartbeat(payload) {
-        writeRuntimeStatus(payload.status, {
-          attemptPrefix,
-          recoveryCount: currentRecoveryCount,
-          recoveryHistory,
-          heartbeat: payload,
-        });
-      },
-    });
-    const finalMessage = normalizedEngine === "codex"
-      ? (fs.existsSync(attemptLastMessageFile) ? fs.readFileSync(attemptLastMessageFile, "utf8").trim() : "")
-      : String(result.stdout || "").trim();
-
-    writeText(attemptPromptFile, currentPrompt);
-    writeEngineRunArtifacts(runDir, attemptPrefix, result, finalMessage);
-
-    const failure = classifyRuntimeRecoveryFailure({
+    const taskFailure = classifyRuntimeRecoveryFailure({
       result: {
-        ...result,
-        finalMessage,
+        ...taskAttempt.result,
+        finalMessage: taskAttempt.finalMessage,
       },
-      recoveryPolicy,
-      recoveryCount: currentRecoveryCount,
     });
 
-    if (
-      result.ok
-      || !recoveryPolicy.enabled
-      || !failure.recoverable
-      || currentRecoveryCount >= recoveryPolicy.maxPhaseRecoveries
-    ) {
-      const finalRecoverySummary = renderRuntimeRecoverySummary(recoveryHistory);
-      const finalizedResult = result.ok || !finalRecoverySummary
-        ? result
+    if (taskAttempt.result.ok || !recoveryPolicy.enabled) {
+      const finalRecoverySummary = taskAttempt.result.ok
+        ? ""
+        : renderRuntimeRecoverySummary(recoveryHistory, taskFailure);
+      const notification = taskAttempt.result.ok
+        ? null
+        : await maybeSendStopNotification({
+          context,
+          runDir,
+          engine: normalizedEngine,
+          executionMode,
+          failure: taskFailure,
+          result: taskAttempt.result,
+          recoveryHistory,
+        });
+      const notificationNote = taskAttempt.result.ok ? "" : buildNotificationNote(notification);
+      const finalizedResult = taskAttempt.result.ok
+        ? taskAttempt.result
         : {
-          ...result,
-          stderr: [result.stderr, "", finalRecoverySummary].filter(Boolean).join("\n").trim(),
+          ...taskAttempt.result,
+          stderr: [
+            taskAttempt.result.stderr,
+            "",
+            finalRecoverySummary,
+            notificationNote,
+          ].filter(Boolean).join("\n").trim(),
         };
 
       writeText(path.join(runDir, `${prefix}-prompt.md`), currentPrompt);
-      writeEngineRunArtifacts(runDir, prefix, finalizedResult, finalMessage);
-      if (normalizedEngine === "codex" && finalMessage) {
-        writeText(path.join(runDir, `${prefix}-last-message.txt`), finalMessage);
+      writeEngineRunArtifacts(runDir, prefix, finalizedResult, taskAttempt.finalMessage);
+      if (normalizedEngine === "codex" && taskAttempt.finalMessage) {
+        writeText(path.join(runDir, `${prefix}-last-message.txt`), taskAttempt.finalMessage);
       }
-      writeRuntimeStatus(result.ok ? "completed" : "failed", {
+      writeRuntimeStatus(taskAttempt.result.ok ? "completed" : "paused_manual", {
         attemptPrefix,
-        recoveryCount: currentRecoveryCount,
+        recoveryCount: recoveryHistory.length,
         recoveryHistory,
         recoverySummary: finalRecoverySummary,
-        finalMessage,
+        finalMessage: taskAttempt.finalMessage,
         code: finalizedResult.code,
-        failureCode: failure.code,
-        failureReason: failure.reason,
+        failureCode: taskFailure.code,
+        failureFamily: taskFailure.family,
+        failureReason: taskFailure.reason,
+        notification,
       });
 
       return {
         ...finalizedResult,
-        finalMessage,
-        recoveryCount: currentRecoveryCount,
+        finalMessage: taskAttempt.finalMessage,
+        recoveryCount: recoveryHistory.length,
         recoveryHistory,
         recoverySummary: finalRecoverySummary,
-        recoveryFailure: failure,
+        recoveryFailure: taskAttempt.result.ok
+          ? null
+          : {
+            ...taskFailure,
+            shouldStopTask: true,
+            exhausted: true,
+          },
+        notification,
       };
     }
 
-    const nextRecoveryIndex = currentRecoveryCount + 1;
-    const delayMs = selectRuntimeRecoveryDelayMs(recoveryPolicy, nextRecoveryIndex);
-    const recoveryPrompt = buildRuntimeRecoveryPrompt({
-      basePrompt: prompt,
-      engine: normalizedEngine,
-      phaseLabel: executionMode === "analyze" ? "分析/复核" : "执行",
-      failure,
-      result: {
-        ...result,
-        finalMessage,
-      },
-      nextRecoveryIndex,
-      maxRecoveries: recoveryPolicy.maxPhaseRecoveries,
-    });
-    const recoveryRecord = {
-      recoveryIndex: nextRecoveryIndex,
-      code: failure.code,
-      reason: failure.reason,
-      delaySeconds: Math.floor(delayMs / 1000),
-      sourceCode: result.code,
-      watchdogTriggered: result.watchdogTriggered === true,
-      attemptPrefix,
-    };
-    recoveryHistory.push(recoveryRecord);
-    writeJson(path.join(
-      runDir,
-      `${prefix}-auto-recovery-${String(nextRecoveryIndex).padStart(2, "0")}.json`,
-    ), {
-      ...recoveryRecord,
-      engine: normalizedEngine,
-      phase: executionMode,
-      stdoutTail: tailText(result.stdout, 20),
-      stderrTail: tailText(result.stderr, 20),
-      finalMessageTail: tailText(finalMessage, 20),
-      createdAt: nowIso(),
-    });
-    writeText(
-      path.join(runDir, `${prefix}-auto-recovery-${String(nextRecoveryIndex).padStart(2, "0")}-prompt.md`),
-      recoveryPrompt,
-    );
-    writeRuntimeStatus("retry_waiting", {
-      attemptPrefix,
-      recoveryCount: nextRecoveryIndex,
-      recoveryHistory,
-      nextRetryDelayMs: delayMs,
-      failureCode: failure.code,
-      failureReason: failure.reason,
-    });
-    if (delayMs > 0) {
-      await sleep(delayMs);
+    activeFailure = taskFailure;
+    while (true) {
+      const nextRecoveryIndex = recoveryHistory.length + 1;
+      const recoveryPrompt = buildRuntimeRecoveryPrompt({
+        basePrompt: prompt,
+        engine: normalizedEngine,
+        phaseLabel: executionMode === "analyze" ? "分析/复核" : "执行",
+        failure: activeFailure,
+        result: {
+          ...taskAttempt.result,
+          finalMessage: taskAttempt.finalMessage,
+        },
+        nextRecoveryIndex,
+        maxRecoveries: recoveryPolicy[activeFailure.family === "hard" ? "hardRetryDelaysSeconds" : "softRetryDelaysSeconds"].length,
+      });
+      writeText(
+        path.join(runDir, `${prefix}-auto-recovery-${String(nextRecoveryIndex).padStart(2, "0")}-prompt.md`),
+        recoveryPrompt,
+      );
+      const delayMs = selectRuntimeRecoveryDelayMs(recoveryPolicy, activeFailure.family, nextRecoveryIndex);
+      if (delayMs < 0) {
+        const finalRecoverySummary = renderRuntimeRecoverySummary(recoveryHistory, activeFailure);
+        const notification = await maybeSendStopNotification({
+          context,
+          runDir,
+          engine: normalizedEngine,
+          executionMode,
+          failure: activeFailure,
+          result: taskAttempt.result,
+          recoveryHistory,
+        });
+        const notificationNote = buildNotificationNote(notification);
+        const finalizedResult = {
+          ...taskAttempt.result,
+          stderr: [
+            taskAttempt.result.stderr,
+            "",
+            finalRecoverySummary,
+            notificationNote,
+          ].filter(Boolean).join("\n").trim(),
+        };
+
+        writeText(path.join(runDir, `${prefix}-prompt.md`), currentPrompt);
+        writeEngineRunArtifacts(runDir, prefix, finalizedResult, taskAttempt.finalMessage);
+        writeRuntimeStatus("paused_manual", {
+          attemptPrefix,
+          recoveryCount: recoveryHistory.length,
+          recoveryHistory,
+          recoverySummary: finalRecoverySummary,
+          finalMessage: taskAttempt.finalMessage,
+          code: finalizedResult.code,
+          failureCode: activeFailure.code,
+          failureFamily: activeFailure.family,
+          failureReason: activeFailure.reason,
+          notification,
+        });
+
+        return {
+          ...finalizedResult,
+          finalMessage: taskAttempt.finalMessage,
+          recoveryCount: recoveryHistory.length,
+          recoveryHistory,
+          recoverySummary: finalRecoverySummary,
+          recoveryFailure: {
+            ...activeFailure,
+            shouldStopTask: true,
+            exhausted: true,
+          },
+          notification,
+        };
+      }
+
+      writeRuntimeStatus("retry_waiting", {
+        attemptPrefix,
+        recoveryCount: nextRecoveryIndex,
+        recoveryHistory,
+        nextRetryDelayMs: delayMs,
+        nextRetryAt: new Date(Date.now() + delayMs).toISOString(),
+        failureCode: activeFailure.code,
+        failureFamily: activeFailure.family,
+        failureReason: activeFailure.reason,
+      });
+      if (delayMs > 0) {
+        await sleep(delayMs);
+      }
+
+      const probeAttempt = await runEngineHealthProbe({
+        engine: normalizedEngine,
+        invocation,
+        context,
+        runDir,
+        resolvedPolicy,
+        recoveryPolicy,
+        writeRuntimeStatus,
+        recoveryCount: nextRecoveryIndex,
+        recoveryHistory,
+        env,
+        probeIndex: nextRecoveryIndex,
+      });
+      const recoveryRecord = {
+        recoveryIndex: nextRecoveryIndex,
+        family: activeFailure.family,
+        code: activeFailure.code,
+        reason: activeFailure.reason,
+        delaySeconds: Math.floor(delayMs / 1000),
+        taskStatus: "failed",
+        taskCode: taskAttempt.result.code,
+        taskAttemptPrefix: attemptPrefix,
+        probeStatus: probeAttempt.result.ok ? "ok" : "failed",
+        probeCode: probeAttempt.result.code,
+        probeAttemptPrefix: probeAttempt.attemptPrefix,
+        probeFailureCode: probeAttempt.failure?.code || "",
+        probeFailureFamily: probeAttempt.failure?.family || "",
+        probeFailureReason: probeAttempt.failure?.reason || "",
+        watchdogTriggered: taskAttempt.result.watchdogTriggered === true || probeAttempt.result.watchdogTriggered === true,
+      };
+      recoveryHistory.push(recoveryRecord);
+      writeJson(path.join(
+        runDir,
+        `${prefix}-auto-recovery-${String(nextRecoveryIndex).padStart(2, "0")}.json`,
+      ), {
+        ...recoveryRecord,
+        engine: normalizedEngine,
+        phase: executionMode,
+        stdoutTail: tailText(taskAttempt.result.stdout, 20),
+        stderrTail: tailText(taskAttempt.result.stderr, 20),
+        finalMessageTail: tailText(taskAttempt.finalMessage, 20),
+        probeStdoutTail: tailText(probeAttempt.result.stdout, 20),
+        probeStderrTail: tailText(probeAttempt.result.stderr, 20),
+        probeFinalMessageTail: tailText(probeAttempt.finalMessage, 20),
+        createdAt: nowIso(),
+      });
+
+      if (!probeAttempt.result.ok) {
+        activeFailure = probeAttempt.failure;
+        writeRuntimeStatus("probe_failed", {
+          attemptPrefix: probeAttempt.attemptPrefix,
+          recoveryCount: nextRecoveryIndex,
+          recoveryHistory,
+          failureCode: activeFailure.code,
+          failureFamily: activeFailure.family,
+          failureReason: activeFailure.reason,
+        });
+        continue;
+      }
+
+      currentPrompt = recoveryPrompt;
+      currentRecoveryCount = nextRecoveryIndex;
+      break;
     }
-    currentPrompt = recoveryPrompt;
-    currentRecoveryCount = nextRecoveryIndex;
   }
 }
 
@@ -595,7 +619,7 @@ export async function runEngineExec({ engine, context, prompt, runDir, policy })
 }
 
 export async function runShellCommand(context, commandLine, runDir, index) {
-  const shellInvocation = resolveVerifyShellInvocation();
+  const shellInvocation = resolveVerifyInvocation();
   if (shellInvocation.error) {
     const result = {
       command: commandLine,
@@ -638,10 +662,10 @@ export async function runVerifyCommands(context, commands, runDir) {
         ok: false,
         results,
         failed: result,
-      summary: [
-        `验证失败：${result.command}`,
-        "",
-        "stdout 尾部：",
+        summary: [
+          `验证失败：${result.command}`,
+          "",
+          "stdout 尾部：",
           tailText(result.stdout, 40),
           "",
           "stderr 尾部：",

@@ -3,21 +3,19 @@ import { tailText } from "./common.mjs";
 
 const defaultRuntimeRecoveryPolicy = {
   enabled: true,
-  allowEngineSwitch: false,
   heartbeatIntervalSeconds: 60,
   stallWarningSeconds: 900,
   maxIdleSeconds: 2700,
   killGraceSeconds: 10,
-  maxPhaseRecoveries: 4,
-  retryDelaysSeconds: [120, 300, 900, 1800],
-  retryOnUnknownFailure: true,
-  maxUnknownRecoveries: 1,
+  healthProbeTimeoutSeconds: 120,
+  hardRetryDelaysSeconds: [900, 900, 900, 900, 900],
+  softRetryDelaysSeconds: [900, 900, 900, 900, 900, 1800, 1800, 3600, 5400, 7200, 9000, 10800],
 };
 
 const HARD_STOP_MATCHERS = [
   {
     code: "invalid_request",
-    reason: "当前错误更像请求、参数、协议或输出格式问题，继续原样自动重试大概率无效。",
+    reason: "当前错误更像请求、参数、协议或输出格式问题，需要人工复核调用与提示词。",
     patterns: [
       " 400 ",
       "400 bad request",
@@ -36,7 +34,7 @@ const HARD_STOP_MATCHERS = [
   },
   {
     code: "auth",
-    reason: "当前错误更像登录、鉴权、订阅或权限问题，需要先修复环境。",
+    reason: "当前错误更像登录、鉴权、订阅或权限问题，需要等待环境恢复或人工修复。",
     patterns: [
       "401",
       "403",
@@ -53,8 +51,21 @@ const HARD_STOP_MATCHERS = [
     ],
   },
   {
+    code: "billing",
+    reason: "当前错误更像额度、余额、支付或账单问题，短时间内通常不会自行消失。",
+    patterns: [
+      "payment required",
+      "billing",
+      "insufficient balance",
+      "credit",
+      "quota exceeded",
+      "hard limit",
+      "balance",
+    ],
+  },
+  {
     code: "environment",
-    reason: "当前错误更像本地 CLI 缺失、权限不足或文件系统问题，继续自动重试没有意义。",
+    reason: "当前错误更像本地 CLI 缺失、权限不足或文件系统问题，需要人工修复环境。",
     patterns: [
       "command not found",
       "is not recognized",
@@ -66,7 +77,7 @@ const HARD_STOP_MATCHERS = [
   },
 ];
 
-const RECOVERABLE_MATCHERS = [
+const SOFT_STOP_MATCHERS = [
   {
     code: "rate_limit",
     reason: "当前引擎可能遇到配额、限流或临时容量不足。",
@@ -75,11 +86,9 @@ const RECOVERABLE_MATCHERS = [
       "rate limit",
       "too many requests",
       "quota",
-      "credit",
       "usage limit",
       "capacity",
       "overloaded",
-      "insufficient balance",
       "try again later",
     ],
   },
@@ -153,7 +162,6 @@ export function resolveRuntimeRecoveryPolicy(policy = {}) {
   const configured = policy?.runtimeRecovery || {};
   return {
     enabled: configured.enabled !== false,
-    allowEngineSwitch: configured.allowEngineSwitch === true,
     heartbeatIntervalSeconds: normalizeSeconds(
       configured.heartbeatIntervalSeconds,
       defaultRuntimeRecoveryPolicy.heartbeatIntervalSeconds,
@@ -170,36 +178,35 @@ export function resolveRuntimeRecoveryPolicy(policy = {}) {
       configured.killGraceSeconds,
       defaultRuntimeRecoveryPolicy.killGraceSeconds,
     ),
-    maxPhaseRecoveries: Math.max(
-      0,
-      Math.trunc(normalizeSeconds(configured.maxPhaseRecoveries, defaultRuntimeRecoveryPolicy.maxPhaseRecoveries)),
+    healthProbeTimeoutSeconds: normalizeSeconds(
+      configured.healthProbeTimeoutSeconds,
+      defaultRuntimeRecoveryPolicy.healthProbeTimeoutSeconds,
     ),
-    retryDelaysSeconds: normalizeSecondsList(
-      configured.retryDelaysSeconds,
-      defaultRuntimeRecoveryPolicy.retryDelaysSeconds,
+    hardRetryDelaysSeconds: normalizeSecondsList(
+      configured.hardRetryDelaysSeconds,
+      defaultRuntimeRecoveryPolicy.hardRetryDelaysSeconds,
     ),
-    retryOnUnknownFailure: configured.retryOnUnknownFailure !== false,
-    maxUnknownRecoveries: Math.max(
-      0,
-      Math.trunc(normalizeSeconds(configured.maxUnknownRecoveries, defaultRuntimeRecoveryPolicy.maxUnknownRecoveries)),
+    softRetryDelaysSeconds: normalizeSecondsList(
+      configured.softRetryDelaysSeconds,
+      defaultRuntimeRecoveryPolicy.softRetryDelaysSeconds,
     ),
   };
 }
 
-export function selectRuntimeRecoveryDelayMs(recoveryPolicy, nextRecoveryIndex) {
-  const delays = Array.isArray(recoveryPolicy?.retryDelaysSeconds) && recoveryPolicy.retryDelaysSeconds.length
-    ? recoveryPolicy.retryDelaysSeconds
-    : defaultRuntimeRecoveryPolicy.retryDelaysSeconds;
-  const offset = Math.max(0, Number(nextRecoveryIndex || 1) - 1);
-  const seconds = delays[Math.min(offset, delays.length - 1)] || 0;
-  return Math.max(0, seconds) * 1000;
+export function getRuntimeRecoverySchedule(recoveryPolicy, family = "soft") {
+  return family === "hard"
+    ? recoveryPolicy.hardRetryDelaysSeconds
+    : recoveryPolicy.softRetryDelaysSeconds;
 }
 
-export function classifyRuntimeRecoveryFailure({
-  result = {},
-  recoveryPolicy = defaultRuntimeRecoveryPolicy,
-  recoveryCount = 0,
-} = {}) {
+export function selectRuntimeRecoveryDelayMs(recoveryPolicy, family, nextRecoveryIndex) {
+  const delays = getRuntimeRecoverySchedule(recoveryPolicy, family);
+  const offset = Math.max(0, Number(nextRecoveryIndex || 1) - 1);
+  const seconds = delays[offset] ?? null;
+  return seconds == null ? -1 : Math.max(0, seconds) * 1000;
+}
+
+export function classifyRuntimeRecoveryFailure({ result = {} } = {}) {
   const normalized = normalizeText([
     result.stderr,
     result.stdout,
@@ -209,54 +216,47 @@ export function classifyRuntimeRecoveryFailure({
 
   if (result.watchdogTriggered || result.idleTimeout) {
     return {
-      recoverable: true,
       code: "watchdog_idle",
-      reason: "当前进程长时间没有可见进展，HelloLoop 已按看门狗策略终止并准备同引擎恢复。",
+      family: "soft",
+      reason: "当前进程长时间没有可见进展，HelloLoop 将按软阻塞策略继续探测并恢复。",
     };
   }
 
   for (const matcher of HARD_STOP_MATCHERS) {
     if (hasMatcher(normalized, matcher)) {
       return {
-        recoverable: false,
         code: matcher.code,
+        family: "hard",
         reason: matcher.reason,
       };
     }
   }
 
-  for (const matcher of RECOVERABLE_MATCHERS) {
+  for (const matcher of SOFT_STOP_MATCHERS) {
     if (hasMatcher(normalized, matcher)) {
       return {
-        recoverable: true,
         code: matcher.code,
+        family: "soft",
         reason: matcher.reason,
       };
     }
-  }
-
-  const emptyFailure = !normalized.trim() && !result.ok;
-  if (emptyFailure) {
-    return {
-      recoverable: recoveryCount < (recoveryPolicy.maxUnknownRecoveries || 0),
-      code: "empty_failure",
-      reason: "当前失败没有返回可判定的错误文本，HelloLoop 将按无人值守策略先尝试一次同引擎恢复。",
-    };
-  }
-
-  if (recoveryPolicy.retryOnUnknownFailure && recoveryCount < (recoveryPolicy.maxUnknownRecoveries || 0)) {
-    return {
-      recoverable: true,
-      code: "unknown_failure",
-      reason: "当前错误类型无法稳定归类，HelloLoop 将按无人值守策略先尝试一次同引擎恢复。",
-    };
   }
 
   return {
-    recoverable: false,
     code: "unknown_failure",
-    reason: "当前错误无法判断为可安全自动恢复，已停止本轮自动恢复。",
+    family: "soft",
+    reason: "当前错误类型无法稳定归类，HelloLoop 将按软阻塞策略持续探测并恢复。",
   };
+}
+
+export function buildEngineHealthProbePrompt(engine) {
+  return [
+    "HELLOLOOP_ENGINE_HEALTH_PROBE",
+    `当前只做 ${getEngineDisplayName(engine)} 引擎健康探测。`,
+    "禁止修改仓库、禁止执行开发任务、禁止输出解释。",
+    "只需确认自己当前能正常接收请求并返回简短结果。",
+    "若当前可用，请直接回复：HELLOLOOP_ENGINE_OK",
+  ].join("\n");
 }
 
 export function buildRuntimeRecoveryPrompt({
@@ -287,15 +287,16 @@ export function buildRuntimeRecoveryPrompt({
   ].join("\n");
 }
 
-export function renderRuntimeRecoverySummary(recoveryHistory = []) {
+export function renderRuntimeRecoverySummary(recoveryHistory = [], failure = null) {
   if (!Array.isArray(recoveryHistory) || !recoveryHistory.length) {
     return "";
   }
 
   return [
-    `HelloLoop 已按无人值守策略进行 ${recoveryHistory.length} 次同引擎自动恢复。`,
+    `HelloLoop 已按${failure?.family === "hard" ? "硬阻塞" : "软阻塞"}策略进行 ${recoveryHistory.length} 次自动探测/恢复。`,
     ...recoveryHistory.map((item) => (
-      `- 第 ${item.recoveryIndex} 次恢复：${item.reason}（等待 ${item.delaySeconds} 秒）`
+      `- 第 ${item.recoveryIndex} 次：等待 ${item.delaySeconds} 秒；探测 ${item.probeStatus || "unknown"}；任务 ${item.taskStatus || "unknown"}`
     )),
+    "自动恢复额度已用尽，当前已暂停等待用户介入。",
   ].join("\n");
 }

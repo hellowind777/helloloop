@@ -79,7 +79,7 @@ function buildCliEnv(binDir, extra = {}) {
     HELLOLOOP_CODEX_EXECUTABLE: cliExecutable(binDir, "codex"),
     HELLOLOOP_CLAUDE_EXECUTABLE: cliExecutable(binDir, "claude"),
     HELLOLOOP_GEMINI_EXECUTABLE: cliExecutable(binDir, "gemini"),
-    HELLOLOOP_USER_SETTINGS_FILE: path.join(binDir, "user-settings.json"),
+    HELLOLOOP_SETTINGS_FILE: path.join(binDir, "settings.json"),
     ...extra,
   };
 }

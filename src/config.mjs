@@ -20,15 +20,13 @@ const defaultPolicy = {
   stopOnHighRisk: true,
   runtimeRecovery: {
     enabled: true,
-    allowEngineSwitch: false,
     heartbeatIntervalSeconds: 60,
     stallWarningSeconds: 900,
     maxIdleSeconds: 2700,
     killGraceSeconds: 10,
-    maxPhaseRecoveries: 4,
-    retryDelaysSeconds: [120, 300, 900, 1800],
-    retryOnUnknownFailure: true,
-    maxUnknownRecoveries: 1,
+    healthProbeTimeoutSeconds: 120,
+    hardRetryDelaysSeconds: [900, 900, 900, 900, 900],
+    softRetryDelaysSeconds: [900, 900, 900, 900, 900, 1800, 1800, 3600, 5400, 7200, 9000, 10800],
   },
   codex: {
     model: "",
@@ -84,9 +82,12 @@ export function loadPolicy(context) {
   policy.runtimeRecovery = {
     ...defaultPolicy.runtimeRecovery,
     ...(policy.runtimeRecovery || {}),
-    retryDelaysSeconds: Array.isArray(policy?.runtimeRecovery?.retryDelaysSeconds)
-      ? policy.runtimeRecovery.retryDelaysSeconds
-      : defaultPolicy.runtimeRecovery.retryDelaysSeconds,
+    hardRetryDelaysSeconds: Array.isArray(policy?.runtimeRecovery?.hardRetryDelaysSeconds)
+      ? policy.runtimeRecovery.hardRetryDelaysSeconds
+      : defaultPolicy.runtimeRecovery.hardRetryDelaysSeconds,
+    softRetryDelaysSeconds: Array.isArray(policy?.runtimeRecovery?.softRetryDelaysSeconds)
+      ? policy.runtimeRecovery.softRetryDelaysSeconds
+      : defaultPolicy.runtimeRecovery.softRetryDelaysSeconds,
   };
   return policy;
 }

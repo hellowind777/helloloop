@@ -1,6 +1,6 @@
 {
   "name": "helloloop",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "HelloLoop 的 Claude Code 原生插件元数据，用于多 CLI 宿主分发。",
   "author": {
     "name": "HelloLoop"

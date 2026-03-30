@@ -18,6 +18,7 @@
 
 这意味着：
 
+- 三宿主都只在用户显式调用 `helloloop` 时介入；普通会话不会被 HelloLoop 自动接管
 - 无论在终端还是在 `Codex` / `Claude` / `Gemini` 宿主内，只要用户未明确指定引擎，`HelloLoop` 都会先询问本轮执行引擎
 - 当前宿主、项目历史、用户历史只作为推荐依据，不会自动替你选中引擎
 - 如果你已经显式指定，或已经在首轮确认中明确选定了引擎，本轮就固定按该引擎执行
@@ -27,9 +28,9 @@
 
 | 宿主 | 安装方式 | 原生入口 | 说明 |
 | --- | --- | --- | --- |
-| `Codex CLI` | `helloloop install` / `helloloop install --host codex` | `$helloloop` / `npx helloloop` | Codex 原生插件 + CLI |
-| `Claude Code` | `helloloop install --host claude` | `/helloloop` | Claude 原生 marketplace / plugin |
-| `Gemini CLI` | `helloloop install --host gemini` | `/helloloop` | Gemini 原生 extension |
+| `Codex CLI` | `helloloop install` / `helloloop install --host codex` | `$helloloop` / `npx helloloop` | 仅在显式调用时进入 HelloLoop |
+| `Claude Code` | `helloloop install --host claude` | `/helloloop` | 仅在显式调用时进入 HelloLoop |
+| `Gemini CLI` | `helloloop install --host gemini` | `/helloloop` | 仅在显式调用时进入 HelloLoop |
 
 ## 最短使用方式
 
@@ -62,7 +63,7 @@ npx helloloop gemini <PATH> 接续完成剩余开发
 - 首参只有第一个裸词会被解释为引擎；如果你真要把 `claude` 当目录名，请写成 `./claude`、`.\claude` 或绝对路径
 - 命令后的自然语言如果明确提到 `codex`、`claude`、`gemini`，也会纳入意图判断
 - 当前宿主、项目历史、用户历史不会触发自动选中，只会影响“推荐项”
-- `已安装` 不等于 `可继续执行`；如果当前引擎在运行中遇到 429、5xx、网络抖动、流中断、长时间卡死等问题，`HelloLoop` 会先按无人值守策略做同引擎自动恢复，不会中途停下来询问
+- `已安装` 不等于 `可继续执行`；如果当前引擎在运行中遇到 400、鉴权、欠费、429、5xx、网络抖动、流中断、长时间卡死等问题，`HelloLoop` 会先按无人值守策略做同引擎“健康探测 + 条件恢复”，不会中途停下来询问
 
 ## 默认工作流
 
@@ -89,24 +90,58 @@ npx helloloop gemini <PATH> 接续完成剩余开发
 
 `HelloLoop` 的设计目标不是“跑一轮停一轮”，而是启动前确认一次，启动后持续无人值守推进。
 
-因此运行中的默认策略是：
+- 因此运行中的默认策略是：
 
 - 普通运行故障不再中途提问：不会因为 429、5xx、网络抖动、结果流中断、短时空输出就停下来问用户
 - 同引擎优先恢复：默认不会自动切换引擎，也不会偷偷改用别的 CLI
+- 先探测、后续跑：重试前会先做最小健康探测；只有探测通过后，才会恢复主线任务，而不是盲目把完整任务再跑一遍
 - 保留主线上下文恢复：同引擎恢复时会生成恢复记录与恢复 prompt，要求新一轮执行直接基于当前仓库状态继续，而不是从头另起一套
 - 定时心跳检查：运行中会持续写入心跳与恢复状态，用于判断当前阶段是否还在正常推进
-- 先预警再终止：默认每 60 秒刷新一次心跳；若长时间没有可见进展，先标记为疑似卡住；达到更长的自动恢复阈值后，才会终止当前进程并做同引擎恢复
-- 硬错误直接停止：如果识别为 400 请求错误、登录/鉴权/订阅问题、本地 CLI 缺失或权限错误，不会盲目重试
+- 最终停止会告警：如果自动恢复额度真正用尽，且已配置全局邮箱，`HelloLoop` 会把错误类型与具体内容发到指定邮箱
 
 默认恢复节奏：
 
 - 心跳间隔：60 秒
 - 疑似卡住预警：15 分钟无可见进展
-- 自动恢复阈值：45 分钟无可见进展
-- 同阶段最多自动恢复：4 次
-- 恢复等待：2 分钟 → 5 分钟 → 15 分钟 → 30 分钟
+- 自动终止阈值：45 分钟无可见进展
+- 硬阻塞：每 15 分钟探测 1 次，共 5 次；仍失败则暂停等待人工介入
+- 软阻塞：先每 15 分钟探测 5 次，再 30 分钟 2 次，再按 60 / 90 / 120 / 150 / 180 分钟各探测 1 次；仍失败则暂停等待人工介入
 
 如果你明确指定或确认了本轮引擎，`HelloLoop` 在自动恢复阶段也会继续锁定该引擎，不会擅自切换。
+
+## 全局告警配置
+
+如果希望在“自动恢复彻底停止”后收到邮件告警，可在：
+
+```text
+~/.helloloop/settings.json
+```
+
+中配置邮件通知，例如：
+
+```json
+{
+  "notifications": {
+    "email": {
+      "enabled": true,
+      "to": ["you@example.com"],
+      "from": "helloloop@example.com",
+      "smtp": {
+        "host": "smtp.example.com",
+        "port": 465,
+        "secure": true,
+        "username": "helloloop@example.com",
+        "passwordEnv": "HELLOLOOP_SMTP_PASSWORD"
+      }
+    }
+  }
+}
+```
+
+说明：
+
+- 建议把 SMTP 密码放在环境变量里，不要明文写进配置文件
+- 邮件只在“本轮不再继续自动重试”时发送，不会每次失败都刷屏
 
 ## 自动发现与交互逻辑
 
@@ -253,7 +288,7 @@ npx helloloop install --host all --force
 
 说明：
 
-- `--force` 会清理当前宿主里旧分支 / 旧版本残留的 `helloloop` 安装目录后再重装
+- `--force` 会清理当前宿主里已有安装残留的 `helloloop` 目录后再重装
 - `Codex` 会刷新插件目录和 marketplace 条目
 - `Claude` 会刷新 marketplace、缓存插件目录，以及 `settings.json` / `known_marketplaces.json` / `installed_plugins.json` 中的 `helloloop` 条目
 - `Gemini` 会刷新 `extensions/helloloop/`，不会动同目录下其他扩展
@@ -301,6 +336,7 @@ npx helloloop
 ```
 
 如果你在 `Codex` 中直接使用 `$helloloop` 或 `npx helloloop`，但没有明确指定引擎，`HelloLoop` 仍会先让你确认本轮引擎；`Codex` 只会作为推荐项，不会被自动选中。
+未显式调用 `$helloloop`、`helloloop:helloloop` 或 `npx helloloop` 时，普通 `Codex` 会话不会被 HelloLoop 自动接管。
 
 ### Claude Code / Gemini CLI
 
@@ -309,6 +345,7 @@ npx helloloop
 ```
 
 它们会按各自 CLI 的原生 agent 逻辑执行，但共享同一套 `.helloloop/` 工作流规范。
+只有在你显式调用 `/helloloop` 时，它们才会进入 HelloLoop 工作流；普通 Claude / Gemini 会话不会被自动接管。
 
 ## 常用命令
 

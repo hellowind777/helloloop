@@ -122,6 +122,18 @@ test("公开文档不再包含旧命令流和无关发布说明", () => {
   }
 });
 
+test("公开文档明确未指定引擎时不会自动选择", () => {
+  const combined = [
+    "README.md",
+    "docs/README.md",
+    "docs/install.md",
+    "docs/multi-cli-architecture.md",
+    "docs/plugin-standard.md",
+  ].map((file) => fs.readFileSync(path.join(repoRoot, file), "utf8")).join("\n");
+
+  assert.match(combined, /未明确引擎时不会自动选择|只作为推荐依据，不会自动选中/);
+});
+
 test("helloloop skill 明确要求优先走主 CLI，而不是手工模拟流程", () => {
   const skill = fs.readFileSync(path.join(repoRoot, "skills", "helloloop", "SKILL.md"), "utf8");
   const manifest = JSON.parse(fs.readFileSync(
@@ -130,9 +142,12 @@ test("helloloop skill 明确要求优先走主 CLI，而不是手工模拟流程
   ));
 
   assert.match(skill, /优先执行 `npx helloloop` 或 `npx helloloop <PATH>`/);
+  assert.match(skill, /不允许接管普通 Codex 会话/);
   assert.match(skill, /不允许在对话里手工模拟/);
   assert.match(skill, /默认执行映射/);
+  assert.match(manifest.interface.longDescription, /只有在用户显式调用 helloloop skill/);
   assert.match(manifest.interface.longDescription, /先分析、再展示确认单、确认后自动接续推进/);
+  assert.match(manifest.interface.defaultPrompt[0], /普通 Codex 会话不要自动接管/);
   assert.match(manifest.interface.defaultPrompt[0], /优先执行 npx helloloop 或 npx helloloop <PATH>/);
 });
 
@@ -151,6 +166,7 @@ test("Claude 与 Gemini 宿主提示词已同步最新工作流约束", () => {
   );
 
   for (const content of [claudeCommand, geminiCommand, geminiContext]) {
+    assert.match(content, /显式调用|不要接管普通/);
     assert.match(content, /自然语言补充要求|语义理解/);
     assert.match(content, /项目.*冲突/);
     assert.match(content, /测试.*验收/);

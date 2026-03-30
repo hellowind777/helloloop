@@ -38,6 +38,54 @@ export function assertPathInside(parentDir, targetDir, label) {
   }
 }
 
+function sleepSync(ms) {
+  const shared = new SharedArrayBuffer(4);
+  const view = new Int32Array(shared);
+  Atomics.wait(view, 0, 0, Math.max(0, ms));
+}
+
+function isRetryableRemoveError(error) {
+  const code = String(error?.code || "").toUpperCase();
+  return ["ENOTEMPTY", "EPERM", "EBUSY"].includes(code);
+}
+
+function removeDirectoryWithRetries(targetPath) {
+  const retryDelaysMs = [0, 50, 150, 300];
+  let lastError = null;
+
+  for (const delayMs of retryDelaysMs) {
+    if (delayMs > 0) {
+      sleepSync(delayMs);
+    }
+    try {
+      fs.rmSync(targetPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableRemoveError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  const tempPath = `${targetPath}.removing-${Date.now()}`;
+  fs.renameSync(targetPath, tempPath);
+  try {
+    fs.rmSync(tempPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  } catch (error) {
+    throw lastError || error;
+  }
+}
+
+function removeFsPath(targetPath) {
+  const stats = fs.lstatSync(targetPath);
+  if (stats.isDirectory() && !stats.isSymbolicLink()) {
+    removeDirectoryWithRetries(targetPath);
+    return;
+  }
+  fs.rmSync(targetPath, { force: true, recursive: true, maxRetries: 3, retryDelay: 100 });
+}
+
 export function removeTargetIfNeeded(targetPath, force) {
   if (!fileExists(targetPath)) {
     return;
@@ -45,14 +93,14 @@ export function removeTargetIfNeeded(targetPath, force) {
   if (!force) {
     throw new Error(`目标目录已存在：${targetPath}。若要覆盖，请追加 --force。`);
   }
-  fs.rmSync(targetPath, { recursive: true, force: true });
+  removeFsPath(targetPath);
 }
 
 export function removePathIfExists(targetPath) {
   if (!fileExists(targetPath)) {
     return false;
   }
-  fs.rmSync(targetPath, { recursive: true, force: true });
+  removeFsPath(targetPath);
   return true;
 }
 

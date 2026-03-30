@@ -1,6 +1,6 @@
 {
   "name": "helloloop",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "面向 Codex CLI、Claude Code、Gemini CLI 的多宿主开发工作流插件，Codex 路径为首发与参考实现。",
   "author": {
     "name": "HelloLoop"
@@ -16,8 +16,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "HelloLoop",
-    "shortDescription": "基于 backlog 的持续仓库开发与验证循环",
-    "longDescription": "HelloLoop 把基于 backlog 的持续开发能力封装为官方 Codex 插件 bundle。显式调用 helloloop skill 时，默认优先进入 npx helloloop 主 CLI 流程：支持 npx helloloop、npx helloloop <PATH>、npx helloloop codex|claude|gemini ...，先分析、再展示确认单、确认后自动接续推进；运行中按无人值守自动恢复持续推进主线。",
+    "shortDescription": "显式调用后按 backlog 持续开发与验证",
+    "longDescription": "HelloLoop 把基于 backlog 的持续开发能力封装为官方 Codex 插件 bundle。只有在用户显式调用 helloloop skill，或明确要求使用 HelloLoop 时才应介入；进入后默认优先走 npx helloloop 主 CLI 流程：支持 npx helloloop、npx helloloop <PATH>、npx helloloop codex|claude|gemini ...，先分析、再展示确认单、确认后自动接续推进；运行中按无人值守自动恢复持续推进主线。",
     "developerName": "HelloLoop",
     "category": "Coding",
     "capabilities": [
@@ -25,7 +25,7 @@
       "Write"
     ],
     "defaultPrompt": [
-      "使用 HelloLoop 时，优先执行 npx helloloop 或 npx helloloop <PATH>；如果用户明确指定执行引擎，也允许使用 npx helloloop codex|claude|gemini ...。启动前确认一次，启动后按无人值守自动恢复与主线续跑执行，不要在对话里手工模拟流程。"
+      "只有当用户显式调用 $helloloop / #helloloop / helloloop:helloloop，或明确要求使用 HelloLoop 时，才进入 npx helloloop 主 CLI 流程；普通 Codex 会话不要自动接管。进入后优先执行 npx helloloop 或 npx helloloop <PATH>；如果用户明确指定执行引擎，也允许使用 npx helloloop codex|claude|gemini ...。启动前确认一次，启动后按无人值守自动恢复与主线续跑执行，不要在对话里手工模拟流程。"
     ],
     "brandColor": "#0F766E"
   }

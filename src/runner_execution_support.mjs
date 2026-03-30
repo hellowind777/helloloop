@@ -13,7 +13,6 @@ import {
 } from "./config.mjs";
 import { getTask, selectNextTask, unresolvedDependencies, updateTask } from "./backlog.mjs";
 import { makeRunDir } from "./runner_status.mjs";
-import { resolveRuntimeRecoveryPolicy } from "./runtime_recovery.mjs";
 
 function resolveTask(backlog, options) {
   if (options.taskId) {
@@ -119,14 +118,6 @@ export function buildDoneResult(execution, finalMessage, attempts, engineResolut
     attempts,
     engineResolution,
   });
-}
-
-export async function maybeSwitchEngine(execution, engineResolution, previousFailure, phaseLabel) {
-  const recoveryPolicy = resolveRuntimeRecoveryPolicy(execution.policy);
-  if (!recoveryPolicy.allowEngineSwitch) {
-    return null;
-  }
-  return null;
 }
 
 export function recordFailure(failureHistory, strategyIndex, attemptIndex, kind, summary) {
