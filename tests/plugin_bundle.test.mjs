@@ -90,7 +90,8 @@ test("Claude marketplace 内嵌插件 manifest 与根 manifest 版本保持一�
   assert.equal(bundledManifest.version, rootManifest.version);
   assert.equal(bundledManifest.license, rootManifest.license);
   assert.equal(bundledManifest.homepage, rootManifest.homepage);
-  assert.deepEqual(bundledManifest.repository, rootManifest.repository);
+  assert.equal(typeof rootManifest.repository, "string");
+  assert.equal(bundledManifest.repository, rootManifest.repository);
 });
 
 test("README 使用短命令示例且不暴露本机绝对路径", () => {
