@@ -1,9 +1,14 @@
 {
   "name": "helloloop",
-  "version": "0.7.1",
-  "description": "HelloLoop 的 Claude Code 原生插件。",
+  "version": "0.8.1",
+  "description": "HelloLoop 的 Claude Code 原生插件元数据，用于多 CLI 宿主分发。",
   "author": {
     "name": "HelloLoop"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/hellowind777/helloloop",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hellowind777/helloloop"
+  }
 }

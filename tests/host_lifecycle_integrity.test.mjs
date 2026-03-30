@@ -322,6 +322,16 @@ test("install --host claude --force 会清理旧版本缓存并更新配置，�
       ".claude-plugin",
       "plugin.json",
     )));
+    assert.equal(readJson(path.join(
+      claudeHome,
+      "plugins",
+      "cache",
+      "helloloop-local",
+      "helloloop",
+      packageVersion,
+      ".claude-plugin",
+      "plugin.json",
+    )).version, packageVersion);
 
     const settings = readJson(settingsFile);
     assert.equal(Boolean(settings.enabledPlugins?.["helloloop@helloloop-local"]), true);

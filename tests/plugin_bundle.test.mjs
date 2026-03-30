@@ -76,6 +76,23 @@ test("Claude marketplace manifest 符合当前标准字段", () => {
   assert.match(marketplace.metadata.description, /HelloLoop/);
 });
 
+test("Claude marketplace 内嵌插件 manifest 与根 manifest 版本保持一致", () => {
+  const rootManifest = JSON.parse(fs.readFileSync(
+    path.join(repoRoot, ".claude-plugin", "plugin.json"),
+    "utf8",
+  ));
+  const bundledManifest = JSON.parse(fs.readFileSync(
+    path.join(repoRoot, "hosts", "claude", "marketplace", "plugins", "helloloop", ".claude-plugin", "plugin.json"),
+    "utf8",
+  ));
+
+  assert.equal(bundledManifest.name, rootManifest.name);
+  assert.equal(bundledManifest.version, rootManifest.version);
+  assert.equal(bundledManifest.license, rootManifest.license);
+  assert.equal(bundledManifest.homepage, rootManifest.homepage);
+  assert.deepEqual(bundledManifest.repository, rootManifest.repository);
+});
+
 test("README 使用短命令示例且不暴露本机绝对路径", () => {
   const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
 
