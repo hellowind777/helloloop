@@ -157,10 +157,43 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2.6.1
-        with:
-          tag_name: ${{ needs.prepare.outputs.tag }}
-          name: ${{ needs.prepare.outputs.version }}
-          prerelease: ${{ needs.prepare.outputs.is_beta == 'true' }}
-          generate_release_notes: true
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag }}
+          RELEASE_TITLE: ${{ needs.prepare.outputs.version }}
+          IS_PRERELEASE: ${{ needs.prepare.outputs.is_beta }}
+        run: |
+          set -euo pipefail
+
+          notes_json="$(mktemp)"
+          notes_file="$(mktemp)"
+
+          gh api \
+            --method POST \
+            "repos/$REPOSITORY/releases/generate-notes" \
+            -f tag_name="$TAG_NAME" > "$notes_json"
+
+          node -e "const fs=require('fs'); const [jsonFile, notesFile] = process.argv.slice(1); const payload = JSON.parse(fs.readFileSync(jsonFile, 'utf8')); const body = String(payload.body || '').trim(); fs.writeFileSync(notesFile, body ? body + '\n' : '', 'utf8');" "$notes_json" "$notes_file"
+
+          prerelease_args=()
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            prerelease_args+=(--prerelease)
+          fi
+
+          if gh release view "$TAG_NAME" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG_NAME" \
+              --repo "$REPOSITORY" \
+              --title "$RELEASE_TITLE" \
+              --notes-file "$notes_file" \
+              "${prerelease_args[@]}"
+          else
+            gh release create "$TAG_NAME" \
+              --repo "$REPOSITORY" \
+              --title "$RELEASE_TITLE" \
+              --notes-file "$notes_file" \
+              --verify-tag \
+              "${prerelease_args[@]}"
+          fi

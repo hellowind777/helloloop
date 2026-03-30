@@ -209,3 +209,18 @@ test("Claude 与 Gemini 宿主提示词已同步最新工作流约束", () => {
     assert.match(content, /测试.*验收/);
   }
 });
+
+test("发布工作流已改为 GitHub CLI release 链路，避免 deprecated action runtime", () => {
+  const workflow = fs.readFileSync(
+    path.join(repoRoot, ".github", "workflows", "publish.yml"),
+    "utf8",
+  );
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+
+  assert.doesNotMatch(workflow, /softprops\/action-gh-release/);
+  assert.match(workflow, /gh release create/);
+  assert.match(workflow, /gh release edit/);
+  assert.match(workflow, /releases\/generate-notes/);
+  assert.match(readme, /当前 `HelloLoop` 主进程仍然存活/);
+  assert.match(readme, /不会让 `HelloLoop` 脱离当前会话，在后台继续每 15 分钟自行重试/);
+});

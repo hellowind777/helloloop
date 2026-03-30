@@ -1,5 +1,10 @@
 # 变更日志
 
+## [Unreleased]
+### 调整
+- **[CI/发布]**: 发布工作流改为使用官方 `gh` CLI 与 `generate-notes` API 创建 / 更新 GitHub Release，移除会触发 Node runtime deprecation warning 的第三方 action
+- **[README]**: 补充说明自动恢复仅在当前 HelloLoop 主进程仍存活时生效；用户手动 `Esc` / `Ctrl+C` 或宿主级中止不会在后台继续每 15 分钟自启重试
+
 ## [0.8.4] - 2026-03-31
 ### 调整
 - **[Structured Outputs]**: 修复 Codex 分析/复核 JSON Schema 与严格模式不兼容的问题，避免 `invalid_json_schema` 直接中断

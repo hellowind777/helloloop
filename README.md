@@ -120,6 +120,13 @@ npx helloloop gemini <PATH> 接续完成剩余开发
 
 如果你明确指定或确认了本轮引擎，`HelloLoop` 在自动恢复阶段也会继续锁定该引擎，不会擅自切换。
 
+但要特别注意：
+
+- 上述自动恢复只在 **当前 `HelloLoop` 主进程仍然存活** 时生效
+- 如果用户手动按 `Esc` / `Ctrl+C`、直接关闭宿主窗口、结束终端进程，或宿主自身把这次会话彻底中止，当前这条自动恢复链也会一起结束
+- 也就是说，这类“人为 / 宿主级取消”不会让 `HelloLoop` 脱离当前会话，在后台继续每 15 分钟自行重试
+- 发生这类中断后，需要你重新执行 `npx helloloop`、`npx helloloop next`，或回到宿主里再次显式调用 `helloloop` 来接续
+
 ## 全局告警配置
 
 如果希望在“自动恢复彻底停止”后收到邮件告警，可在：
@@ -464,6 +471,7 @@ git push origin vX.Y.Z-beta.N
 - 正式版本使用 npm `latest` 渠道，beta 版本使用 npm `beta` 渠道
 - 如果测试、版本校验或打包检查失败，npm 发布与 GitHub Release 都不会继续执行
 - `0.8.4` 起已补齐 Codex Structured Outputs 严格 schema 兼容，并修复快退出 CLI 在 CI 中可能触发的 `stdin EPIPE` 问题，避免发布工作流被非业务性故障打断
+- GitHub Release 阶段现已改为使用官方 `gh` CLI + `generate-notes` API 创建 / 更新 release，不再依赖会触发 Node runtime deprecation warning 的第三方 action
 
 ## 宿主写入范围
 
