@@ -5,21 +5,23 @@ import {
   assertPathInside,
   codexBundleEntries,
   copyBundleEntries,
+  readExistingJsonOrThrow,
   removePathIfExists,
   removeTargetIfNeeded,
   resolveHomeDir,
 } from "./install_shared.mjs";
 
-function updateCodexMarketplace(marketplaceFile) {
-  const marketplace = fileExists(marketplaceFile)
-    ? readJson(marketplaceFile)
-    : {
-      name: "local-plugins",
-      interface: {
-        displayName: "Local Plugins",
-      },
-      plugins: [],
-    };
+function updateCodexMarketplace(marketplaceFile, existingMarketplace = null) {
+  const marketplace = existingMarketplace
+    || (fileExists(marketplaceFile)
+      ? readJson(marketplaceFile)
+      : {
+        name: "local-plugins",
+        interface: {
+          displayName: "Local Plugins",
+        },
+        plugins: [],
+      });
 
   marketplace.interface = marketplace.interface || {
     displayName: "Local Plugins",
@@ -49,12 +51,12 @@ function updateCodexMarketplace(marketplaceFile) {
   writeJson(marketplaceFile, marketplace);
 }
 
-function removeCodexMarketplaceEntry(marketplaceFile) {
+function removeCodexMarketplaceEntry(marketplaceFile, existingMarketplace = null) {
   if (!fileExists(marketplaceFile)) {
     return false;
   }
 
-  const marketplace = readJson(marketplaceFile);
+  const marketplace = existingMarketplace || readJson(marketplaceFile);
   const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
   const nextPlugins = plugins.filter((plugin) => plugin?.name !== "helloloop");
   if (nextPlugins.length === plugins.length) {
@@ -72,6 +74,7 @@ export function installCodexHost(bundleRoot, options = {}) {
   const targetPluginRoot = path.join(targetPluginsRoot, "helloloop");
   const marketplaceFile = path.join(resolvedCodexHome, ".agents", "plugins", "marketplace.json");
   const manifestFile = path.join(bundleRoot, ".codex-plugin", "plugin.json");
+  const existingMarketplace = readExistingJsonOrThrow(marketplaceFile, "Codex marketplace 配置");
 
   if (!fileExists(manifestFile)) {
     throw new Error(`未找到 Codex 插件 manifest：${manifestFile}`);
@@ -86,7 +89,7 @@ export function installCodexHost(bundleRoot, options = {}) {
   removePathIfExists(path.join(targetPluginRoot, ".git"));
 
   ensureDir(path.dirname(marketplaceFile));
-  updateCodexMarketplace(marketplaceFile);
+  updateCodexMarketplace(marketplaceFile, existingMarketplace);
 
   return {
     host: "codex",
@@ -100,9 +103,10 @@ export function uninstallCodexHost(options = {}) {
   const resolvedCodexHome = resolveHomeDir(options.codexHome, ".codex");
   const targetPluginRoot = path.join(resolvedCodexHome, "plugins", "helloloop");
   const marketplaceFile = path.join(resolvedCodexHome, ".agents", "plugins", "marketplace.json");
+  const existingMarketplace = readExistingJsonOrThrow(marketplaceFile, "Codex marketplace 配置");
 
   const removedPlugin = removePathIfExists(targetPluginRoot);
-  const removedMarketplace = removeCodexMarketplaceEntry(marketplaceFile);
+  const removedMarketplace = removeCodexMarketplaceEntry(marketplaceFile, existingMarketplace);
 
   return {
     host: "codex",

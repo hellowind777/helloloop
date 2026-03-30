@@ -29,6 +29,22 @@ export function renderInstallSummary(result) {
     }
   }
 
+  if (result.userSettings?.settingsFile) {
+    lines.push("");
+    lines.push("全局设置：");
+    lines.push(`- 配置文件：${result.userSettings.settingsFile}`);
+    if (result.userSettings.action === "created") {
+      lines.push("- 结构校准：已创建默认 settings.json");
+    } else if (result.userSettings.action === "reset_invalid_json") {
+      lines.push("- 结构校准：检测到非法 JSON，已重建为当前版本结构");
+      if (result.userSettings.backupFile) {
+        lines.push(`- 备份文件：${result.userSettings.backupFile}`);
+      }
+    } else {
+      lines.push("- 结构校准：已按当前版本同步 settings.json 项");
+    }
+  }
+
   lines.push("");
   lines.push("使用入口：");
   lines.push("- Codex：`$helloloop` / `npx helloloop`");

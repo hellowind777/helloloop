@@ -293,6 +293,9 @@ npx helloloop install --host all --force
 - `Codex` 会刷新插件目录和 marketplace 条目
 - `Claude` 会刷新 marketplace、缓存插件目录，以及 `settings.json` / `known_marketplaces.json` / `installed_plugins.json` 中的 `helloloop` 条目
 - `Gemini` 会刷新 `extensions/helloloop/`，不会动同目录下其他扩展
+- 安装 / 升级 / 重装时，会同步校准 `~/.helloloop/settings.json` 的当前版本结构：补齐缺失项、清理未知项、保留已知项现有值
+- 如果 `~/.helloloop/settings.json` 不是合法 JSON，会先备份原文件，再按当前版本结构重建
+- 如果宿主自己的配置 JSON（如 `Codex marketplace.json`、`Claude settings.json`、`known_marketplaces.json`、`installed_plugins.json`）本身已损坏，`HelloLoop` 会先明确报错并停止，不会先清理现有安装再失败
 
 ### 卸载
 
@@ -426,6 +429,21 @@ npx helloloop doctor --host all --codex-home <CODEX_HOME> --claude-home <CLAUDE_
 
 `HelloLoop` 只维护自己的目录和自己的注册项，不会重写别的插件条目。
 
+## 用户目录写入范围
+
+全局用户目录 `~/.helloloop/` 只保留一份全局设置：
+
+```text
+~/.helloloop/
+└── settings.json
+```
+
+说明：
+
+- 这里不保存项目 backlog、状态、运行记录
+- 安装 / 升级 / 重装时，会对 `settings.json` 做结构校准，但不会校验或篡改你已存在的已知项内容
+- 如果 `settings.json` 非法，会先备份，再重建为当前版本结构
+
 ## `.helloloop/` 状态目录
 
 `HelloLoop` 的 backlog、状态和运行记录始终写入目标仓库根目录下的：
@@ -441,6 +459,7 @@ npx helloloop doctor --host all --codex-home <CODEX_HOME> --claude-home <CLAUDE_
 ```
 
 不会写回插件目录自身。
+也不会写入 `~/.helloloop/`。
 
 ## 跨平台与安全
 

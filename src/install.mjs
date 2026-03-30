@@ -38,6 +38,7 @@ export function installPluginBundle(options = {}) {
     installedHosts,
     targetPluginRoot: codexResult?.targetRoot || "",
     marketplaceFile: codexResult?.marketplaceFile || "",
+    userSettings: options.userSettings || null,
   };
 }
 

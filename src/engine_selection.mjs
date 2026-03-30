@@ -327,9 +327,7 @@ export function rememberEngineSelection(context, engineResolution, options = {})
     });
   }
 
-  const userSettings = loadUserSettings(options);
   saveUserSettings({
-    ...userSettings,
     lastSelectedEngine: engine,
   }, options);
 }

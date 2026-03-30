@@ -2,11 +2,15 @@ import path from "node:path";
 
 import { createContext } from "./context.mjs";
 import { loadBacklog, scaffoldIfMissing } from "./config.mjs";
+import { syncUserSettingsFile } from "./engine_selection_settings.mjs";
 import { installPluginBundle, uninstallPluginBundle } from "./install.mjs";
 import { runLoop, runOnce, renderStatusText } from "./runner.mjs";
 import { renderInstallSummary, renderUninstallSummary } from "./cli_render.mjs";
 
 export function handleInstallCommand(options) {
+  const userSettings = syncUserSettingsFile({
+    userSettingsFile: options.userSettingsFile,
+  });
   const context = createContext({
     repoRoot: options.repoRoot,
     configDirName: options.configDirName,
@@ -18,6 +22,7 @@ export function handleInstallCommand(options) {
     claudeHome: options.claudeHome,
     geminiHome: options.geminiHome,
     force: options.force,
+    userSettings,
   });
   console.log(renderInstallSummary(result));
   return 0;

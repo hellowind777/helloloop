@@ -6,13 +6,14 @@ import {
   CLAUDE_PLUGIN_KEY,
   assertPathInside,
   copyDirectory,
+  readExistingJsonOrThrow,
   removePathIfExists,
   removeTargetIfNeeded,
   resolveHomeDir,
 } from "./install_shared.mjs";
 
-function updateClaudeSettings(settingsFile, marketplaceRoot) {
-  const settings = fileExists(settingsFile) ? readJson(settingsFile) : {};
+function updateClaudeSettings(settingsFile, marketplaceRoot, existingSettings = null) {
+  const settings = existingSettings || (fileExists(settingsFile) ? readJson(settingsFile) : {});
 
   settings.extraKnownMarketplaces = settings.extraKnownMarketplaces || {};
   settings.enabledPlugins = settings.enabledPlugins || {};
@@ -27,12 +28,12 @@ function updateClaudeSettings(settingsFile, marketplaceRoot) {
   writeJson(settingsFile, settings);
 }
 
-function removeClaudeSettingsEntries(settingsFile) {
+function removeClaudeSettingsEntries(settingsFile, existingSettings = null) {
   if (!fileExists(settingsFile)) {
     return false;
   }
 
-  const settings = readJson(settingsFile);
+  const settings = existingSettings || readJson(settingsFile);
   let changed = false;
 
   if (settings.extraKnownMarketplaces && Object.hasOwn(settings.extraKnownMarketplaces, CLAUDE_MARKETPLACE_NAME)) {
@@ -50,8 +51,13 @@ function removeClaudeSettingsEntries(settingsFile) {
   return changed;
 }
 
-function updateClaudeKnownMarketplaces(knownMarketplacesFile, marketplaceRoot, updatedAt) {
-  const knownMarketplaces = fileExists(knownMarketplacesFile) ? readJson(knownMarketplacesFile) : {};
+function updateClaudeKnownMarketplaces(
+  knownMarketplacesFile,
+  marketplaceRoot,
+  updatedAt,
+  existingKnownMarketplaces = null,
+) {
+  const knownMarketplaces = existingKnownMarketplaces || (fileExists(knownMarketplacesFile) ? readJson(knownMarketplacesFile) : {});
   knownMarketplaces[CLAUDE_MARKETPLACE_NAME] = {
     source: {
       source: "directory",
@@ -63,12 +69,12 @@ function updateClaudeKnownMarketplaces(knownMarketplacesFile, marketplaceRoot, u
   writeJson(knownMarketplacesFile, knownMarketplaces);
 }
 
-function removeClaudeKnownMarketplace(knownMarketplacesFile) {
+function removeClaudeKnownMarketplace(knownMarketplacesFile, existingKnownMarketplaces = null) {
   if (!fileExists(knownMarketplacesFile)) {
     return false;
   }
 
-  const knownMarketplaces = readJson(knownMarketplacesFile);
+  const knownMarketplaces = existingKnownMarketplaces || readJson(knownMarketplacesFile);
   if (!Object.hasOwn(knownMarketplaces, CLAUDE_MARKETPLACE_NAME)) {
     return false;
   }
@@ -78,10 +84,18 @@ function removeClaudeKnownMarketplace(knownMarketplacesFile) {
   return true;
 }
 
-function updateClaudeInstalledPlugins(installedPluginsFile, pluginRoot, pluginVersion, updatedAt) {
-  const installedPlugins = fileExists(installedPluginsFile)
-    ? readJson(installedPluginsFile)
-    : { version: 2, plugins: {} };
+function updateClaudeInstalledPlugins(
+  installedPluginsFile,
+  pluginRoot,
+  pluginVersion,
+  updatedAt,
+  existingInstalledPlugins = null,
+) {
+  const installedPlugins = existingInstalledPlugins
+    ? existingInstalledPlugins
+    : (fileExists(installedPluginsFile)
+      ? readJson(installedPluginsFile)
+      : { version: 2, plugins: {} });
 
   installedPlugins.version = 2;
   installedPlugins.plugins = installedPlugins.plugins || {};
@@ -98,12 +112,12 @@ function updateClaudeInstalledPlugins(installedPluginsFile, pluginRoot, pluginVe
   writeJson(installedPluginsFile, installedPlugins);
 }
 
-function removeClaudeInstalledPlugin(installedPluginsFile) {
+function removeClaudeInstalledPlugin(installedPluginsFile, existingInstalledPlugins = null) {
   if (!fileExists(installedPluginsFile)) {
     return false;
   }
 
-  const installedPlugins = readJson(installedPluginsFile);
+  const installedPlugins = existingInstalledPlugins || readJson(installedPluginsFile);
   if (!installedPlugins.plugins || !Object.hasOwn(installedPlugins.plugins, CLAUDE_PLUGIN_KEY)) {
     return false;
   }
@@ -125,6 +139,9 @@ export function installClaudeHost(bundleRoot, options = {}) {
   const knownMarketplacesFile = path.join(targetPluginsRoot, "known_marketplaces.json");
   const installedPluginsFile = path.join(targetPluginsRoot, "installed_plugins.json");
   const settingsFile = path.join(resolvedClaudeHome, "settings.json");
+  const existingSettings = readExistingJsonOrThrow(settingsFile, "Claude settings 配置");
+  const existingKnownMarketplaces = readExistingJsonOrThrow(knownMarketplacesFile, "Claude known_marketplaces 配置");
+  const existingInstalledPlugins = readExistingJsonOrThrow(installedPluginsFile, "Claude installed_plugins 配置");
 
   if (!fileExists(sourceManifest)) {
     throw new Error(`未找到 Claude 插件 manifest：${sourceManifest}`);
@@ -144,9 +161,20 @@ export function installClaudeHost(bundleRoot, options = {}) {
   copyDirectory(sourceMarketplaceRoot, targetMarketplaceRoot);
   copyDirectory(path.join(sourceMarketplaceRoot, "plugins", "helloloop"), targetInstalledPluginRoot);
   const updatedAt = nowIso();
-  updateClaudeSettings(settingsFile, targetMarketplaceRoot);
-  updateClaudeKnownMarketplaces(knownMarketplacesFile, targetMarketplaceRoot, updatedAt);
-  updateClaudeInstalledPlugins(installedPluginsFile, targetInstalledPluginRoot, pluginVersion, updatedAt);
+  updateClaudeSettings(settingsFile, targetMarketplaceRoot, existingSettings);
+  updateClaudeKnownMarketplaces(
+    knownMarketplacesFile,
+    targetMarketplaceRoot,
+    updatedAt,
+    existingKnownMarketplaces,
+  );
+  updateClaudeInstalledPlugins(
+    installedPluginsFile,
+    targetInstalledPluginRoot,
+    pluginVersion,
+    updatedAt,
+    existingInstalledPlugins,
+  );
 
   return {
     host: "claude",
@@ -165,12 +193,15 @@ export function uninstallClaudeHost(options = {}) {
   const knownMarketplacesFile = path.join(targetPluginsRoot, "known_marketplaces.json");
   const installedPluginsFile = path.join(targetPluginsRoot, "installed_plugins.json");
   const settingsFile = path.join(resolvedClaudeHome, "settings.json");
+  const existingSettings = readExistingJsonOrThrow(settingsFile, "Claude settings 配置");
+  const existingKnownMarketplaces = readExistingJsonOrThrow(knownMarketplacesFile, "Claude known_marketplaces 配置");
+  const existingInstalledPlugins = readExistingJsonOrThrow(installedPluginsFile, "Claude installed_plugins 配置");
 
   const removedMarketplaceDir = removePathIfExists(targetMarketplaceRoot);
   const removedCacheDir = removePathIfExists(targetCachePluginsRoot);
-  const removedKnownMarketplace = removeClaudeKnownMarketplace(knownMarketplacesFile);
-  const removedInstalledPlugin = removeClaudeInstalledPlugin(installedPluginsFile);
-  const removedSettingsEntries = removeClaudeSettingsEntries(settingsFile);
+  const removedKnownMarketplace = removeClaudeKnownMarketplace(knownMarketplacesFile, existingKnownMarketplaces);
+  const removedInstalledPlugin = removeClaudeInstalledPlugin(installedPluginsFile, existingInstalledPlugins);
+  const removedSettingsEntries = removeClaudeSettingsEntries(settingsFile, existingSettings);
 
   return {
     host: "claude",

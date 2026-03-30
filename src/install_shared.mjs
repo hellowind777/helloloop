@@ -132,6 +132,17 @@ export function loadOrInitJson(filePath, fallbackValue) {
   return readJson(filePath);
 }
 
+export function readExistingJsonOrThrow(filePath, label) {
+  if (!fileExists(filePath)) {
+    return null;
+  }
+  try {
+    return readJson(filePath);
+  } catch (error) {
+    throw new Error(`${label} 不是合法 JSON：${filePath}`);
+  }
+}
+
 export function writeJsonFile(filePath, value) {
   ensureDir(path.dirname(filePath));
   writeJson(filePath, value);
