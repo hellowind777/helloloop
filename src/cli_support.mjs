@@ -2,7 +2,8 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 
 import { analyzeExecution, summarizeBacklog } from "./backlog.mjs";
-import { fileExists, readJson } from "./common.mjs";
+import { fileExists, readJson, readTextIfExists } from "./common.mjs";
+import { resolveCodexLocalRoot } from "./install_shared.mjs";
 import { createPromptSession } from "./prompt_session.mjs";
 import { resolveCliInvocation, resolveCodexInvocation } from "./shell_invocation.mjs";
 
@@ -133,15 +134,37 @@ function normalizeDoctorHosts(hostOption) {
 function collectCodexDoctorChecks(context, options = {}) {
   const checks = collectDoctorChecks(context, options);
   if (options.codexHome) {
+    const codexLocalRoot = resolveCodexLocalRoot(options.codexHome);
+    const codexConfigFile = path.join(options.codexHome, "config.toml");
+    const codexInstalledPluginFile = path.join(
+      options.codexHome,
+      "plugins",
+      "cache",
+      "local-plugins",
+      "helloloop",
+      "local",
+      ".codex-plugin",
+      "plugin.json",
+    );
+    checks.push({
+      name: "codex plugin source",
+      ok: fileExists(path.join(codexLocalRoot, "plugins", "helloloop", ".codex-plugin", "plugin.json")),
+      detail: path.join(codexLocalRoot, "plugins", "helloloop", ".codex-plugin", "plugin.json"),
+    });
     checks.push({
       name: "codex installed plugin",
-      ok: fileExists(path.join(options.codexHome, "plugins", "helloloop", ".codex-plugin", "plugin.json")),
-      detail: path.join(options.codexHome, "plugins", "helloloop", ".codex-plugin", "plugin.json"),
+      ok: fileExists(codexInstalledPluginFile),
+      detail: codexInstalledPluginFile,
     });
     checks.push({
       name: "codex marketplace",
-      ok: fileExists(path.join(options.codexHome, ".agents", "plugins", "marketplace.json")),
-      detail: path.join(options.codexHome, ".agents", "plugins", "marketplace.json"),
+      ok: fileExists(path.join(codexLocalRoot, ".agents", "plugins", "marketplace.json")),
+      detail: path.join(codexLocalRoot, ".agents", "plugins", "marketplace.json"),
+    });
+    checks.push({
+      name: "codex plugin config",
+      ok: readTextIfExists(codexConfigFile, "").includes('[plugins."helloloop@local-plugins"]'),
+      detail: codexConfigFile,
     });
   }
   return checks;

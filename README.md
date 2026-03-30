@@ -29,9 +29,15 @@
 
 | 宿主 | 安装方式 | 原生入口 | 说明 |
 | --- | --- | --- | --- |
-| `Codex CLI` | `helloloop install` / `helloloop install --host codex` | `$helloloop` / `npx helloloop` | 仅在显式调用时进入 HelloLoop |
+| `Codex CLI` | `helloloop install` / `helloloop install --host codex` | `Codex` 内：`$helloloop`；终端：`npx helloloop` | 仅在显式调用时进入 HelloLoop |
 | `Claude Code` | `helloloop install --host claude` | `/helloloop` | 仅在显式调用时进入 HelloLoop |
 | `Gemini CLI` | `helloloop install --host gemini` | `/helloloop` | 仅在显式调用时进入 HelloLoop |
+
+补充说明：
+
+- `install --host codex` 只会把 `HelloLoop` 注册成 `Codex` 插件，不会把 `helloloop` 写进系统 `PATH`
+- 终端里的 `npx helloloop` 始终是 npm CLI 入口；如果本机未全局安装，首次执行出现 `Need to install the following packages` 属正常行为
+- `Codex` 安装完成后，建议重启 `Codex` 或新开一个会话，再检查 `$helloloop`
 
 ## 最短使用方式
 
@@ -156,13 +162,10 @@ npx helloloop
 
 `HelloLoop` 会先明确执行引擎，再快速扫描当前目录：
 
-- 当前目录本身就是项目仓库或开发文档目录时，直接进入分析
-- 当前目录更像工作区时，优先利用顶层文档，再提示选择候选项目目录
-- 当前目录没有明确开发文档时，不会直接报错，而是先列出：
-  - 顶层文档文件
-  - 顶层目录
-  - 疑似项目目录
-  然后再询问开发文档路径
+- 当前目录本身就是开发文档目录时，会先尝试从文档反推项目目录
+- 当前目录看起来像普通项目目录时，默认直接把当前目录作为项目目录
+- 当前目录更像工作区或用户主目录时，才会额外询问项目目录
+- 如果当前项目目录下没有明确开发文档，会只提示补充“开发文档”这一项，并说明已检查的常见位置
 
 ### 2. 项目路径只问一次
 
@@ -173,11 +176,22 @@ npx helloloop
 
 不会再额外追问一个“新项目路径”。
 
-### 3. 文档和项目缺一不可时会停下询问
+### 3. 缺什么就只问什么
+
+正常情况下只需要两项信息：
+
+- 项目目录
+- 开发文档
+
+其中：
+
+- 项目目录默认优先使用当前打开的目录
+- 当前目录明显不是项目目录时，才会额外询问项目目录
+- 开发文档缺失时，只会询问开发文档
 
 以下情况不会硬猜：
 
-- 给了开发文档，但无法定位项目仓库
+- 给了开发文档，但仍无法定位项目目录
 - 给了项目路径，但无法定位开发文档
 - 同时出现多个冲突的文档路径或项目路径
 
@@ -217,7 +231,7 @@ npx helloloop --rebuild-existing
 - 执行引擎
 - 需求语义理解
 - 项目匹配判断
-- 目标仓库
+- 项目目录
 - 开发文档
 - 当前进度
 - 已实现事项
@@ -290,7 +304,7 @@ npx helloloop install --host all --force
 说明：
 
 - `--force` 会清理当前宿主里已有安装残留的 `helloloop` 目录后再重装
-- `Codex` 会刷新插件目录和 marketplace 条目
+- `Codex` 会刷新 home 根下的插件源码目录、已安装缓存、`config.toml` 启用项和 marketplace 条目
 - `Claude` 会刷新 marketplace、缓存插件目录，以及 `settings.json` / `known_marketplaces.json` / `installed_plugins.json` 中的 `helloloop` 条目
 - `Gemini` 会刷新 `extensions/helloloop/`，不会动同目录下其他扩展
 - 安装 / 升级 / 重装时，会同步校准 `~/.helloloop/settings.json` 的当前版本结构：补齐缺失项、清理未知项、保留已知项现有值
@@ -334,7 +348,7 @@ $helloloop
 helloloop:helloloop
 ```
 
-在 `Codex` 中也可以直接执行：
+在终端里（包括 `Codex` 打开的内置终端）也可以直接执行：
 
 ```bash
 npx helloloop
@@ -413,8 +427,10 @@ npx helloloop doctor --host all --codex-home <CODEX_HOME> --claude-home <CLAUDE_
 
 ### `Codex CLI`
 
-- 插件目录：`~/.codex/plugins/helloloop/`
-- 注册文件：`~/.codex/.agents/plugins/marketplace.json`
+- 插件源码目录：`~/plugins/helloloop/`
+- 已安装缓存：`~/.codex/plugins/cache/local-plugins/helloloop/local/`
+- marketplace：`~/.agents/plugins/marketplace.json`
+- 启用配置：`~/.codex/config.toml`
 
 ### `Claude Code`
 

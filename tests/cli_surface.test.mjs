@@ -62,11 +62,93 @@ test("npm bin 入口支持 install 命令，把插件安装到指定 Codex Home"
     assert.match(result.stdout, /HelloLoop 已安装到/);
     assert.match(result.stdout, /npx helloloop next/);
     assert.ok(fs.existsSync(path.join(tempHome, "plugins", "helloloop", ".codex-plugin", "plugin.json")));
+    assert.ok(fs.existsSync(path.join(
+      tempHome,
+      "plugins",
+      "cache",
+      "local-plugins",
+      "helloloop",
+      "local",
+      ".codex-plugin",
+      "plugin.json",
+    )));
     assert.ok(fs.existsSync(path.join(tempHome, ".agents", "plugins", "marketplace.json")));
+    assert.match(
+      fs.readFileSync(path.join(tempHome, "config.toml"), "utf8"),
+      /\[plugins\."helloloop@local-plugins"\]\s+enabled = true/,
+    );
     assert.ok(!fs.existsSync(path.join(tempHome, "plugins", "helloloop", "docs")));
     assert.ok(!fs.existsSync(path.join(tempHome, "plugins", "helloloop", "tests")));
   } finally {
     fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
+test("install 在默认 .codex 目录结构下会把本地 marketplace 和源码目录写到 home 根", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-cli-default-codex-home-"));
+  const codexHome = path.join(tempRoot, ".codex");
+
+  const result = spawnSync("node", [npmBinEntry, "install", "--codex-home", codexHome], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+  try {
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(fs.existsSync(path.join(tempRoot, "plugins", "helloloop", ".codex-plugin", "plugin.json")));
+    assert.ok(fs.existsSync(path.join(tempRoot, ".agents", "plugins", "marketplace.json")));
+    assert.ok(fs.existsSync(path.join(
+      codexHome,
+      "plugins",
+      "cache",
+      "local-plugins",
+      "helloloop",
+      "local",
+      ".codex-plugin",
+      "plugin.json",
+    )));
+    assert.match(
+      fs.readFileSync(path.join(codexHome, "config.toml"), "utf8"),
+      /\[plugins\."helloloop@local-plugins"\]\s+enabled = true/,
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("uninstall 在默认 .codex 目录结构下会同时清理 home 根源码目录和 Codex 缓存配置", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-cli-default-codex-uninstall-"));
+  const codexHome = path.join(tempRoot, ".codex");
+
+  const installResult = spawnSync("node", [npmBinEntry, "install", "--codex-home", codexHome], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  assert.equal(installResult.status, 0, installResult.stderr);
+
+  const result = spawnSync("node", [npmBinEntry, "uninstall", "--codex-home", codexHome], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+
+  try {
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(!fs.existsSync(path.join(tempRoot, "plugins", "helloloop")));
+    assert.ok(!fs.existsSync(path.join(
+      codexHome,
+      "plugins",
+      "cache",
+      "local-plugins",
+      "helloloop",
+    )));
+    assert.doesNotMatch(
+      fs.readFileSync(path.join(codexHome, "config.toml"), "utf8"),
+      /\[plugins\."helloloop@local-plugins"\]/,
+    );
+    const codexMarketplace = JSON.parse(fs.readFileSync(path.join(tempRoot, ".agents", "plugins", "marketplace.json"), "utf8"));
+    assert.equal(codexMarketplace.plugins.some((plugin) => plugin?.name === "helloloop"), false);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 
@@ -99,7 +181,21 @@ test("install --host all 会同时安装 Codex、Claude 和 Gemini 宿主资产"
     assert.match(result.stdout, /Gemini/);
 
     assert.ok(fs.existsSync(path.join(codexHome, "plugins", "helloloop", ".codex-plugin", "plugin.json")));
+    assert.ok(fs.existsSync(path.join(
+      codexHome,
+      "plugins",
+      "cache",
+      "local-plugins",
+      "helloloop",
+      "local",
+      ".codex-plugin",
+      "plugin.json",
+    )));
     assert.ok(fs.existsSync(path.join(codexHome, ".agents", "plugins", "marketplace.json")));
+    assert.match(
+      fs.readFileSync(path.join(codexHome, "config.toml"), "utf8"),
+      /\[plugins\."helloloop@local-plugins"\]\s+enabled = true/,
+    );
 
     assert.ok(fs.existsSync(path.join(
       claudeHome,
@@ -186,12 +282,23 @@ test("uninstall --host all 会移除 Codex、Claude 和 Gemini 的安装痕迹�
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /HelloLoop 已从以下宿主卸载/);
     assert.ok(!fs.existsSync(path.join(codexHome, "plugins", "helloloop")));
+    assert.ok(!fs.existsSync(path.join(
+      codexHome,
+      "plugins",
+      "cache",
+      "local-plugins",
+      "helloloop",
+    )));
     assert.ok(!fs.existsSync(path.join(geminiHome, "extensions", "helloloop")));
     assert.ok(!fs.existsSync(path.join(claudeHome, "plugins", "marketplaces", "helloloop-local")));
     assert.ok(!fs.existsSync(path.join(claudeHome, "plugins", "cache", "helloloop-local")));
 
     const codexMarketplace = JSON.parse(fs.readFileSync(path.join(codexHome, ".agents", "plugins", "marketplace.json"), "utf8"));
     assert.equal(codexMarketplace.plugins.some((plugin) => plugin?.name === "helloloop"), false);
+    assert.doesNotMatch(
+      fs.readFileSync(path.join(codexHome, "config.toml"), "utf8"),
+      /\[plugins\."helloloop@local-plugins"\]/,
+    );
 
     const claudeSettings = JSON.parse(fs.readFileSync(path.join(claudeHome, "settings.json"), "utf8"));
     assert.equal(Boolean(claudeSettings.enabledPlugins?.["helloloop@helloloop-local"]), false);
@@ -232,6 +339,15 @@ test("install --host all --force 会清理旧分支残留后重装最新运行�
   assert.equal(firstInstall.status, 0, firstInstall.stderr);
 
   writeText(path.join(codexHome, "plugins", "helloloop", "STALE.txt"), "old branch\n");
+  writeText(path.join(
+    codexHome,
+    "plugins",
+    "cache",
+    "local-plugins",
+    "helloloop",
+    "local",
+    "STALE.txt",
+  ), "old branch\n");
   writeText(path.join(claudeHome, "plugins", "marketplaces", "helloloop-local", "STALE.txt"), "old branch\n");
   writeText(path.join(geminiHome, "extensions", "helloloop", "STALE.txt"), "old branch\n");
 
@@ -255,9 +371,32 @@ test("install --host all --force 会清理旧分支残留后重装最新运行�
   try {
     assert.equal(result.status, 0, result.stderr);
     assert.ok(!fs.existsSync(path.join(codexHome, "plugins", "helloloop", "STALE.txt")));
+    assert.ok(!fs.existsSync(path.join(
+      codexHome,
+      "plugins",
+      "cache",
+      "local-plugins",
+      "helloloop",
+      "local",
+      "STALE.txt",
+    )));
     assert.ok(!fs.existsSync(path.join(claudeHome, "plugins", "marketplaces", "helloloop-local", "STALE.txt")));
     assert.ok(!fs.existsSync(path.join(geminiHome, "extensions", "helloloop", "STALE.txt")));
     assert.ok(fs.existsSync(path.join(codexHome, "plugins", "helloloop", ".codex-plugin", "plugin.json")));
+    assert.ok(fs.existsSync(path.join(
+      codexHome,
+      "plugins",
+      "cache",
+      "local-plugins",
+      "helloloop",
+      "local",
+      ".codex-plugin",
+      "plugin.json",
+    )));
+    assert.match(
+      fs.readFileSync(path.join(codexHome, "config.toml"), "utf8"),
+      /\[plugins\."helloloop@local-plugins"\]\s+enabled = true/,
+    );
     assert.ok(fs.existsSync(path.join(
       claudeHome,
       "plugins",

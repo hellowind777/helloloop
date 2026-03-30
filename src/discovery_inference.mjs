@@ -223,40 +223,56 @@ export function inferDocsForRepo(repoRoot, cwd, configDirName) {
     };
   }
 
-  const repoDocsCandidates = uniquePaths([
+  const repoDocsDirectories = uniquePaths([
     path.join(repoRoot, "docs"),
     path.join(repoRoot, "Docs"),
+    path.join(repoRoot, "doc"),
+    path.join(repoRoot, "Doc"),
+    path.join(repoRoot, "documentation"),
+    path.join(repoRoot, "Documentation"),
   ].filter((candidate) => isDocsDirectory(candidate)));
 
-  if (repoDocsCandidates.length === 1) {
+  const repoRootDocFiles = listDocFilesInDirectory(repoRoot)
+    .filter((candidate) => path.basename(candidate).toLowerCase() !== "agents.md");
+  const candidates = uniquePaths([...repoDocsDirectories, ...repoRootDocFiles]);
+
+  if (repoDocsDirectories.length === 1) {
     return {
-      docsEntries: [normalizeForRepo(repoRoot, repoDocsCandidates[0])],
-      source: "repo_docs",
-      candidates: repoDocsCandidates,
+      docsEntries: [normalizeForRepo(repoRoot, repoDocsDirectories[0])],
+      source: "repo_docs_dir",
+      candidates,
+    };
+  }
+
+  if (!repoDocsDirectories.length && repoRootDocFiles.length === 1) {
+    return {
+      docsEntries: [normalizeForRepo(repoRoot, repoRootDocFiles[0])],
+      source: "repo_doc_file",
+      candidates,
     };
   }
 
   return {
     docsEntries: [],
     source: "",
-    candidates: repoDocsCandidates,
+    candidates,
   };
 }
 
 export function renderMissingRepoMessage(docEntries, candidates) {
   return [
-    "无法自动确定要开发的项目仓库路径。",
+    "无法自动确定要开发的项目目录。",
     docEntries.length ? `已找到开发文档：${docEntries.map((item) => item.replaceAll("\\", "/")).join("，")}` : "",
-    ...formatCandidates("候选项目：", candidates),
+    ...formatCandidates("候选项目目录：", candidates),
     "可重新运行 `npx helloloop` 后按提示选择，或显式补充项目路径，例如：",
-    "npx helloloop --repo <PROJECT_ROOT>",
+    "npx helloloop --repo <PROJECT_DIR>",
   ].filter(Boolean).join("\n");
 }
 
 export function renderMissingDocsMessage(repoRoot, candidates = []) {
   return [
-    "无法自动确定开发文档位置。",
-    `已找到项目仓库：${repoRoot.replaceAll("\\", "/")}`,
+    "未找到开发文档。",
+    `当前项目目录：${repoRoot.replaceAll("\\", "/")}`,
     ...formatCandidates("候选开发文档：", candidates),
     "可重新运行 `npx helloloop` 后按提示选择，或显式补充开发文档路径，例如：",
     "npx helloloop --docs <DOCS_PATH>",

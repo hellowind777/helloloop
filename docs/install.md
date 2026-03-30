@@ -12,7 +12,7 @@
 ### Codex
 
 ```text
-<CODEX_HOME>/
+<HOME>/
 ├── .agents/plugins/marketplace.json
 └── plugins/
     └── helloloop/
@@ -22,6 +22,11 @@
         ├── skills/
         ├── src/
         └── templates/
+
+<CODEX_HOME>/
+├── config.toml
+└── plugins/
+    └── cache/local-plugins/helloloop/local/
 ```
 
 ### Claude
@@ -115,7 +120,7 @@ npx helloloop uninstall --host all
 
 卸载会清理：
 
-- `Codex`：插件目录与 marketplace 注册项
+- `Codex`：home 根插件源码目录、已安装缓存、`config.toml` 启用项与 marketplace 注册项
 - `Claude`：marketplace、cache、安装索引和 `settings.json` 中的启用记录
 - `Gemini`：扩展目录
 
@@ -137,6 +142,12 @@ Codex   -> $helloloop
 Claude  -> /helloloop
 Gemini  -> /helloloop
 ```
+
+补充说明：
+
+- `install --host codex` 只会把插件注册进 `Codex`，不会把 `helloloop` 命令写进系统 `PATH`
+- 终端里的 `npx helloloop` 仍然是 npm CLI 入口；如果本机未全局安装，首次执行提示拉取 npm 包属于正常行为
+- 安装完成后建议重启 `Codex` 或新开会话，再检查 `$helloloop`
 
 默认行为：
 
@@ -170,8 +181,9 @@ Gemini  -> /helloloop
 
 ## 交互补充说明
 
-- 如果当前目录更像工作区，`HelloLoop` 会优先利用顶层文档，并提示选择候选项目目录
-- 如果没有识别到明确开发文档，会先展示顶层文档文件、顶层目录和疑似项目目录，再询问文档路径
+- 如果当前目录看起来像普通项目目录，`HelloLoop` 默认直接把当前目录当作项目目录
+- 如果当前目录更像工作区或用户主目录，`HelloLoop` 才会额外询问项目目录
+- 如果没有识别到明确开发文档，只会提示补充开发文档，并说明已检查的常见位置
 - 项目路径只问一次：已有目录按现有项目处理，不存在的目录按新项目路径处理
 - 如果当前项目与开发文档目标明显冲突，会先确认是继续、重建还是取消
 - 如果希望非交互直接按重建方案执行，可追加 `--rebuild-existing`
@@ -199,7 +211,7 @@ npx helloloop --repo <PROJECT_ROOT> --docs <DOCS_PATH>
 
 ## 在 Codex 中使用
 
-`npx helloloop ...` 可以直接在当前 `Codex` 会话里执行，不需要重开终端。
+`$helloloop` 是 `Codex` 对话内的插件入口；`npx helloloop ...` 是终端 CLI 入口，可在系统终端或 `Codex` 的内置终端里执行。
 
 如果通过技能入口调用，也就是：
 

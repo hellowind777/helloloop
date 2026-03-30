@@ -31,6 +31,14 @@ export function resolveHomeDir(homeDir, defaultDirName) {
   return path.resolve(homeDir || path.join(os.homedir(), defaultDirName));
 }
 
+export function resolveCodexLocalRoot(codexHome) {
+  const resolvedCodexHome = resolveHomeDir(codexHome, ".codex");
+  if (path.basename(resolvedCodexHome).toLowerCase() === ".codex") {
+    return path.dirname(resolvedCodexHome);
+  }
+  return resolvedCodexHome;
+}
+
 export function assertPathInside(parentDir, targetDir, label) {
   const relative = path.relative(parentDir, targetDir);
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {

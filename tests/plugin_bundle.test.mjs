@@ -134,6 +134,23 @@ test("公开文档明确未指定引擎时不会自动选择", () => {
   assert.match(combined, /未明确引擎时不会自动选择|只作为推荐依据，不会自动选中/);
 });
 
+test("公开文档与宿主提示词已同步新的发现交互，不暴露内部扫描分类", () => {
+  const publicDocs = [
+    "README.md",
+    "docs/install.md",
+    "docs/plugin-standard.md",
+    "skills/helloloop/SKILL.md",
+    "hosts/claude/marketplace/plugins/helloloop/commands/helloloop.md",
+    "hosts/claude/marketplace/plugins/helloloop/skills/helloloop/SKILL.md",
+    "hosts/gemini/extension/GEMINI.md",
+    "hosts/gemini/extension/commands/helloloop.toml",
+  ].map((file) => fs.readFileSync(path.join(repoRoot, file), "utf8")).join("\n");
+
+  assert.match(publicDocs, /默认直接把当前目录当作项目目录|默认直接把当前目录作为项目目录/);
+  assert.match(publicDocs, /只补充询问开发文档|只会提示补充“开发文档”/);
+  assert.doesNotMatch(publicDocs, /顶层文档文件、顶层目录和疑似项目目录/);
+});
+
 test("helloloop skill 明确要求优先走主 CLI，而不是手工模拟流程", () => {
   const skill = fs.readFileSync(path.join(repoRoot, "skills", "helloloop", "SKILL.md"), "utf8");
   const manifest = JSON.parse(fs.readFileSync(

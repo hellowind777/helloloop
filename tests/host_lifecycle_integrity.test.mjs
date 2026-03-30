@@ -44,6 +44,7 @@ test("install/uninstall --host all 只增删 helloloop 配置，不误伤其他 
   const geminiHome = path.join(tempRoot, "gemini-home");
 
   const codexMarketplaceFile = path.join(codexHome, ".agents", "plugins", "marketplace.json");
+  const codexConfigFile = path.join(codexHome, "config.toml");
   writeJson(codexMarketplaceFile, {
     name: "local-plugins",
     interface: {
@@ -60,6 +61,11 @@ test("install/uninstall --host all 只增删 helloloop 配置，不误伤其他 
       },
     ],
   });
+  writeText(codexConfigFile, [
+    "[plugins.\"other-plugin@local-plugins\"]",
+    "enabled = true",
+    "",
+  ].join("\n"));
 
   const claudeSettingsFile = path.join(claudeHome, "settings.json");
   const knownMarketplacesFile = path.join(claudeHome, "plugins", "known_marketplaces.json");
@@ -123,6 +129,19 @@ test("install/uninstall --host all 只增删 helloloop 配置，不误伤其他 
     const codexMarketplace = readJson(codexMarketplaceFile);
     assert.equal(codexMarketplace.plugins.some((item) => item?.name === "other-plugin"), true);
     assert.equal(codexMarketplace.plugins.some((item) => item?.name === "helloloop"), true);
+    const codexConfig = fs.readFileSync(codexConfigFile, "utf8");
+    assert.match(codexConfig, /\[plugins\."other-plugin@local-plugins"\]\s+enabled = true/);
+    assert.match(codexConfig, /\[plugins\."helloloop@local-plugins"\]\s+enabled = true/);
+    assert.ok(fs.existsSync(path.join(
+      codexHome,
+      "plugins",
+      "cache",
+      "local-plugins",
+      "helloloop",
+      "local",
+      ".codex-plugin",
+      "plugin.json",
+    )));
 
     const claudeSettings = readJson(claudeSettingsFile);
     assert.equal(claudeSettings.customSetting, "keep-me");
@@ -156,6 +175,16 @@ test("install/uninstall --host all 只增删 helloloop 配置，不误伤其他 
     const codexMarketplaceAfter = readJson(codexMarketplaceFile);
     assert.equal(codexMarketplaceAfter.plugins.some((item) => item?.name === "helloloop"), false);
     assert.equal(codexMarketplaceAfter.plugins.some((item) => item?.name === "other-plugin"), true);
+    const codexConfigAfter = fs.readFileSync(codexConfigFile, "utf8");
+    assert.doesNotMatch(codexConfigAfter, /\[plugins\."helloloop@local-plugins"\]/);
+    assert.match(codexConfigAfter, /\[plugins\."other-plugin@local-plugins"\]\s+enabled = true/);
+    assert.ok(!fs.existsSync(path.join(
+      codexHome,
+      "plugins",
+      "cache",
+      "local-plugins",
+      "helloloop",
+    )));
 
     const claudeSettingsAfter = readJson(claudeSettingsFile);
     assert.equal(claudeSettingsAfter.customSetting, "keep-me");

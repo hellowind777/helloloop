@@ -83,11 +83,11 @@ function renderResolutionLines(discovery, context, docsDisplay) {
     `- 文档来源：${docsResolution?.sourceLabel || "自动判断"}`,
     `- 文档把握：${docsResolution?.confidenceLabel || "中"}`,
     `- 文档依据：${docsBasis}`,
-    `- 目标仓库：${context.repoRoot.replaceAll("\\", "/")}`,
+    `- 项目目录：${context.repoRoot.replaceAll("\\", "/")}`,
     `- 项目状态：${repoState}`,
-    `- 仓库来源：${repoResolution?.sourceLabel || "自动判断"}`,
-    `- 仓库把握：${repoResolution?.confidenceLabel || "中"}`,
-    `- 仓库依据：${repoBasis}`,
+    `- 目录来源：${repoResolution?.sourceLabel || "自动判断"}`,
+    `- 目录把握：${repoResolution?.confidenceLabel || "中"}`,
+    `- 目录依据：${repoBasis}`,
   ];
 }
 

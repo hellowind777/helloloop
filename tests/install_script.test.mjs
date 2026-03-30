@@ -31,12 +31,26 @@ test("Windows 安装脚本只安装运行时 bundle，不复制开发文档、�
   try {
     assert.equal(result.status, 0, result.stderr);
     const pluginRoot = path.join(tempHome, "plugins", "helloloop");
+    const installedPluginRoot = path.join(
+      tempHome,
+      "plugins",
+      "cache",
+      "local-plugins",
+      "helloloop",
+      "local",
+    );
     const marketplaceFile = path.join(tempHome, ".agents", "plugins", "marketplace.json");
+    const configFile = path.join(tempHome, "config.toml");
 
     assert.ok(fs.existsSync(path.join(pluginRoot, ".codex-plugin", "plugin.json")));
+    assert.ok(fs.existsSync(path.join(installedPluginRoot, ".codex-plugin", "plugin.json")));
     assert.ok(fs.existsSync(path.join(pluginRoot, "LICENSE")));
     assert.ok(fs.existsSync(path.join(pluginRoot, "scripts", "helloloop.mjs")));
     assert.ok(fs.existsSync(marketplaceFile));
+    assert.match(
+      fs.readFileSync(configFile, "utf8"),
+      /\[plugins\."helloloop@local-plugins"\]\s+enabled = true/,
+    );
     assert.ok(!fs.existsSync(path.join(pluginRoot, "docs")));
     assert.ok(!fs.existsSync(path.join(pluginRoot, "tests")));
     assert.ok(!fs.existsSync(path.join(pluginRoot, ".git")));
@@ -51,10 +65,21 @@ test("Windows 安装脚本覆盖已有安装时会清掉残留的 .git 元数据
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-home-reinstall-"));
   const scriptFile = path.join(repoRoot, "scripts", "install-home-plugin.ps1");
   const pluginRoot = path.join(tempHome, "plugins", "helloloop");
+  const installedPluginRoot = path.join(
+    tempHome,
+    "plugins",
+    "cache",
+    "local-plugins",
+    "helloloop",
+    "local",
+  );
   const staleGitRoot = path.join(pluginRoot, ".git");
+  const staleInstalledFile = path.join(installedPluginRoot, "STALE.txt");
 
   fs.mkdirSync(staleGitRoot, { recursive: true });
   fs.writeFileSync(path.join(staleGitRoot, "config"), "[core]\nrepositoryformatversion = 0\n", "utf8");
+  fs.mkdirSync(installedPluginRoot, { recursive: true });
+  fs.writeFileSync(staleInstalledFile, "old install\n", "utf8");
 
   const result = spawnSync("pwsh", [
     "-NoLogo",
@@ -72,8 +97,14 @@ test("Windows 安装脚本覆盖已有安装时会清掉残留的 .git 元数据
   try {
     assert.equal(result.status, 0, result.stderr);
     assert.ok(fs.existsSync(path.join(pluginRoot, ".codex-plugin", "plugin.json")));
+    assert.ok(fs.existsSync(path.join(installedPluginRoot, ".codex-plugin", "plugin.json")));
     assert.ok(fs.existsSync(path.join(pluginRoot, "LICENSE")));
     assert.ok(!fs.existsSync(staleGitRoot));
+    assert.ok(!fs.existsSync(staleInstalledFile));
+    assert.match(
+      fs.readFileSync(path.join(tempHome, "config.toml"), "utf8"),
+      /\[plugins\."helloloop@local-plugins"\]\s+enabled = true/,
+    );
   } finally {
     fs.rmSync(tempHome, { recursive: true, force: true });
   }
@@ -114,11 +145,24 @@ test("Windows 卸载脚本会移除 Codex Home 下的已安装插件与 marketpl
   try {
     assert.equal(result.status, 0, result.stderr);
     const pluginRoot = path.join(tempHome, "plugins", "helloloop");
+    const installedPluginRoot = path.join(
+      tempHome,
+      "plugins",
+      "cache",
+      "local-plugins",
+      "helloloop",
+    );
     const marketplaceFile = path.join(tempHome, ".agents", "plugins", "marketplace.json");
+    const configFile = path.join(tempHome, "config.toml");
 
     assert.ok(!fs.existsSync(pluginRoot));
+    assert.ok(!fs.existsSync(installedPluginRoot));
     const marketplace = JSON.parse(fs.readFileSync(marketplaceFile, "utf8"));
     assert.equal(marketplace.plugins.some((plugin) => plugin?.name === "helloloop"), false);
+    assert.doesNotMatch(
+      fs.readFileSync(configFile, "utf8"),
+      /\[plugins\."helloloop@local-plugins"\]/,
+    );
   } finally {
     fs.rmSync(tempHome, { recursive: true, force: true });
   }

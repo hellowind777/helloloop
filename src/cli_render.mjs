@@ -21,8 +21,14 @@ export function renderInstallSummary(result) {
 
   for (const item of result.installedHosts) {
     lines.push(`- ${item.displayName}：${item.targetRoot}`);
+    if (item.installedRoot) {
+      lines.push(`  installed：${item.installedRoot}`);
+    }
     if (item.marketplaceFile) {
       lines.push(`  marketplace：${item.marketplaceFile}`);
+    }
+    if (item.configFile) {
+      lines.push(`  config：${item.configFile}`);
     }
     if (item.settingsFile) {
       lines.push(`  settings：${item.settingsFile}`);
@@ -47,9 +53,10 @@ export function renderInstallSummary(result) {
 
   lines.push("");
   lines.push("使用入口：");
-  lines.push("- Codex：`$helloloop` / `npx helloloop`");
-  lines.push("- Claude：`/helloloop`");
-  lines.push("- Gemini：`/helloloop`");
+  lines.push("- 终端 CLI：`npx helloloop`");
+  lines.push("- Codex 技能：`$helloloop`");
+  lines.push("- Claude 指令：`/helloloop`");
+  lines.push("- Gemini 指令：`/helloloop`");
   lines.push("");
   lines.push(renderFollowupExamples());
   return lines.join("\n");
@@ -63,6 +70,9 @@ export function renderUninstallSummary(result) {
     lines.push(`  目标目录：${item.targetRoot}`);
     if (item.marketplaceFile) {
       lines.push(`  marketplace：${item.marketplaceFile}`);
+    }
+    if (item.configFile) {
+      lines.push(`  config：${item.configFile}`);
     }
     if (item.settingsFile) {
       lines.push(`  settings：${item.settingsFile}`);

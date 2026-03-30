@@ -31,7 +31,15 @@
 本地 marketplace 入口位于：
 
 ```text
-<CODEX_HOME>/.agents/plugins/marketplace.json
+<HOME>/.agents/plugins/marketplace.json
+```
+
+当前 `Codex` 安装态还需要：
+
+```text
+<HOME>/plugins/helloloop/
+<CODEX_HOME>/plugins/cache/local-plugins/helloloop/local/
+<CODEX_HOME>/config.toml
 ```
 
 ## HelloLoop 的落地映射
@@ -52,9 +60,9 @@
 - `hosts/claude/...`
 - `hosts/gemini/...`
 
-### 外部注册
+### 外部注册 / 安装态
 
-- `Codex`：`<CODEX_HOME>/.agents/plugins/marketplace.json` 指向 `./plugins/helloloop`
+- `Codex`：维护 `<HOME>/.agents/plugins/marketplace.json`、`<HOME>/plugins/helloloop/`、`plugins/cache/local-plugins/helloloop/local/`，并在 `config.toml` 中写入 `helloloop@local-plugins` 启用项
 - `Claude`：写入本地 marketplace、cache、known marketplaces、installed plugins 与 settings 启用项
 - `Gemini`：写入 `~/.gemini/extensions/helloloop`
 
@@ -103,7 +111,8 @@
 
 补充约束：
 
-- 如果当前目录没有明确开发文档，先展示顶层文档文件、顶层目录和疑似项目目录，再询问文档路径
+- 如果当前目录看起来像普通项目目录，默认直接把当前目录当作项目目录；只有明显是工作区或用户主目录时才额外询问项目目录
+- 如果当前项目目录里没有明确开发文档，只补充询问开发文档，不展示内部扫描分类
 - 项目路径对外只有一个概念；若路径不存在，直接按新项目路径处理
 - 如果现有项目与开发文档目标冲突，必须先确认继续、重建还是取消
 - 非交互自动重建仅在显式追加 `--rebuild-existing` 时允许

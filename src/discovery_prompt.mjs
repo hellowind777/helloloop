@@ -1,12 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import {
-  listDocFilesInDirectory,
-  listProjectCandidatesInDirectory,
-  pathExists,
-  resolveAbsolute,
-} from "./discovery_paths.mjs";
+import { pathExists, resolveAbsolute } from "./discovery_paths.mjs";
 import { createPromptSession } from "./prompt_session.mjs";
 
 function toDisplayPath(targetPath) {
@@ -31,63 +26,21 @@ function summarizeList(items, options = {}) {
   return lines;
 }
 
-function collectDirectoryOverview(rootPath) {
-  if (!pathExists(rootPath) || !fs.statSync(rootPath).isDirectory()) {
-    return {
-      rootPath,
-      directories: [],
-      docFiles: [],
-      repoCandidates: [],
-    };
-  }
-
-  const entries = fs.readdirSync(rootPath, { withFileTypes: true });
-  return {
-    rootPath,
-    directories: entries
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort((left, right) => left.localeCompare(right, "zh-CN")),
-    docFiles: listDocFilesInDirectory(rootPath)
-      .map((filePath) => path.basename(filePath))
-      .sort((left, right) => left.localeCompare(right, "zh-CN")),
-    repoCandidates: listProjectCandidatesInDirectory(rootPath)
-      .map((directoryPath) => path.basename(directoryPath))
-      .sort((left, right) => left.localeCompare(right, "zh-CN")),
-  };
-}
-
-function renderDirectoryOverview(title, overview) {
-  return [
-    title,
-    `扫描目录：${toDisplayPath(overview.rootPath)}`,
-    "",
-    "顶层文档文件：",
-    ...summarizeList(overview.docFiles),
-    "",
-    "顶层目录：",
-    ...summarizeList(overview.directories),
-    "",
-    "疑似项目目录：",
-    ...summarizeList(overview.repoCandidates),
-  ].join("\n");
-}
-
-function renderExistingChoices(title, candidates) {
+function renderExistingChoices(title, candidates, footer = "请输入编号；也可以直接输入本地路径；直接回车取消。") {
   return [
     title,
     ...candidates.map((item, index) => `${index + 1}. ${toDisplayPath(item)}`),
     "",
-    "请输入编号；也可以直接输入本地路径；直接回车取消。",
+    footer,
   ].join("\n");
 }
 
-async function promptForExistingPathSelection(readline, title, candidates, cwd, preface = "") {
-  if (preface) {
-    console.log(preface);
+async function promptForExistingPathSelection(readline, title, candidates, cwd, options = {}) {
+  if (options.preface) {
+    console.log(options.preface);
     console.log("");
   }
-  console.log(renderExistingChoices(title, candidates));
+  console.log(renderExistingChoices(title, candidates, options.footer));
   while (true) {
     const answer = String(await readline.question("> ") || "").trim();
     if (!answer) {
@@ -104,26 +57,91 @@ async function promptForExistingPathSelection(readline, title, candidates, cwd, 
       return maybePath;
     }
 
-    console.log("输入无效，请输入候选编号或一个存在的本地路径。");
+    console.log(options.invalidMessage || "输入无效，请输入候选编号或一个存在的本地路径。");
   }
+}
+
+function createCommonDocsPathHints(repoRoot) {
+  return [
+    "./docs",
+    "./doc",
+    "./documentation",
+    "./README.md",
+    "./PRD.md",
+    "./requirements.md",
+    "./spec.md",
+    "./design.md",
+    "./plan.md",
+    "./roadmap.md",
+  ].map((entry) => {
+    if (!repoRoot) {
+      return entry;
+    }
+    return toDisplayPath(path.join(repoRoot, entry.replace(/^\.\//, "")));
+  });
+}
+
+function renderDocsPromptPreface(discovery, cwd) {
+  const repoRoot = discovery.repoRoot || "";
+  const lines = [];
+
+  if (repoRoot) {
+    lines.push("未找到开发文档。");
+    lines.push(`项目目录：${toDisplayPath(repoRoot)}`);
+    return lines.join("\n");
+  }
+
+  if (discovery.workspaceRoot) {
+    lines.push("当前目录更像工作区，暂时不直接作为项目目录。");
+    lines.push(`当前目录：${toDisplayPath(discovery.workspaceRoot)}`);
+    if (Array.isArray(discovery.repoCandidates) && discovery.repoCandidates.length) {
+      lines.push(`候选项目目录：${discovery.repoCandidates.length} 个，稍后再确认。`);
+    }
+    return lines.join("\n");
+  }
+
+  lines.push("未找到开发文档。");
+  lines.push(`当前目录：${toDisplayPath(cwd)}`);
+  return lines.join("\n");
+}
+
+function renderRepoPromptPreface(discovery, cwd) {
+  const lines = [];
+  if (discovery.workspaceRoot) {
+    lines.push("当前目录更像工作区，不能直接作为项目目录。");
+    lines.push(`当前目录：${toDisplayPath(discovery.workspaceRoot)}`);
+  } else {
+    lines.push("还需要确认项目目录。");
+    lines.push(`当前目录：${toDisplayPath(cwd)}`);
+  }
+
+  if (Array.isArray(discovery.docsEntries) && discovery.docsEntries.length) {
+    lines.push(`开发文档：${discovery.docsEntries.map((item) => toDisplayPath(item)).join("，")}`);
+  }
+  return lines.join("\n");
 }
 
 async function promptForDocsPath(readline, discovery, cwd) {
   const docChoices = Array.isArray(discovery.docCandidates) ? discovery.docCandidates : [];
-  const scanRoot = discovery.workspaceRoot || discovery.repoRoot || cwd;
-  const overview = collectDirectoryOverview(scanRoot);
-  const title = docChoices.length
-    ? "请选择开发文档来源："
-    : "未自动识别到明确的开发文档。请输入开发文档目录或文件路径：";
-  const preface = renderDirectoryOverview("当前目录顶层概览", overview);
+  const repoRoot = discovery.repoRoot || "";
+  const preface = renderDocsPromptPreface(discovery, cwd);
 
   if (docChoices.length) {
-    return promptForExistingPathSelection(readline, title, docChoices, cwd, preface);
+    return promptForExistingPathSelection(readline, "请选择开发文档：", docChoices, cwd, {
+      preface,
+      footer: "请输入编号；也可以直接输入已存在的本地路径；直接回车取消。",
+      invalidMessage: "输入无效，请输入候选编号或一个已存在的开发文档路径。",
+    });
   }
 
   console.log(preface);
   console.log("");
-  console.log(title);
+  if (repoRoot) {
+    console.log("已检查这些常见位置：");
+    console.log(summarizeList(createCommonDocsPathHints(repoRoot)).join("\n"));
+    console.log("");
+  }
+  console.log("请输入开发文档路径（文件或目录）：");
   console.log("可直接输入当前目录下的相对路径或绝对路径；直接回车取消。");
   while (true) {
     const answer = String(await readline.question("> ") || "").trim();
@@ -142,21 +160,19 @@ async function promptForDocsPath(readline, discovery, cwd) {
 
 async function promptForRepoPath(readline, discovery, cwd) {
   const repoChoices = Array.isArray(discovery.repoCandidates) ? discovery.repoCandidates : [];
-  const scanRoot = discovery.workspaceRoot
-    || (Array.isArray(discovery.docsEntries) && discovery.docsEntries.length
-      ? path.dirname(discovery.docsEntries[0])
-      : "")
-    || cwd;
-  const overview = collectDirectoryOverview(scanRoot);
-  const preface = renderDirectoryOverview("当前目录顶层概览", overview);
+  const preface = renderRepoPromptPreface(discovery, cwd);
   const title = repoChoices.length
-    ? "请选择目标项目仓库："
-    : "请输入要开发的项目路径：";
+    ? "请选择要开发的项目目录："
+    : "请输入要开发的项目目录：";
+
   console.log(preface);
   console.log("");
   if (repoChoices.length) {
-    console.log(renderExistingChoices(title, repoChoices));
-    console.log("也可以直接输入项目路径；如果这是新项目，可输入准备创建的新目录路径。");
+    console.log(renderExistingChoices(
+      title,
+      repoChoices,
+      "请输入编号；也可以直接输入项目路径；如果这是新项目，可输入准备创建的新目录路径；直接回车取消。",
+    ));
   } else {
     console.log(title);
     console.log("如果这是新项目，可直接输入准备创建的新目录路径；直接回车取消。");
@@ -258,9 +274,9 @@ export async function resolveDiscoveryFailureInteractively(
         : "interactive";
       changed = true;
       if (selectedRepo.allowNewRepoRoot) {
-        console.log(`已指定项目路径（当前不存在，将按新项目创建）：${toDisplayPath(selectedRepo.repoRoot)}`);
+        console.log(`已指定项目目录（当前不存在，将按新项目创建）：${toDisplayPath(selectedRepo.repoRoot)}`);
       } else {
-        console.log(`已选择项目仓库：${toDisplayPath(selectedRepo.repoRoot)}`);
+        console.log(`已选择项目目录：${toDisplayPath(selectedRepo.repoRoot)}`);
       }
       console.log("");
     }

@@ -47,7 +47,8 @@ const DOCS_SOURCE_META = {
   cwd_docs: { label: "当前目录", confidence: "medium" },
   workspace_single_doc: { label: "工作区唯一文档候选", confidence: "medium" },
   existing_state: { label: "已有 .helloloop 配置", confidence: "medium" },
-  repo_docs: { label: "仓库 docs 目录", confidence: "medium" },
+  repo_docs_dir: { label: "项目目录 docs 目录", confidence: "medium" },
+  repo_doc_file: { label: "项目目录顶层文档", confidence: "medium" },
 };
 
 function isImplicitHomeDirectory(targetPath) {
@@ -200,7 +201,12 @@ export function discoverWorkspace(options = {}) {
       repoSource = "explicit_input";
       pushBasis(repoBasis, "目标项目来自命令中传入的单一路径。");
     }
-    if (classified.kind === "workspace" || classified.kind === "directory") {
+    if (classified.kind === "directory") {
+      repoRoot = classified.absolutePath;
+      repoSource = "explicit_input";
+      pushBasis(repoBasis, "目标项目来自命令中传入的目录路径。");
+    }
+    if (classified.kind === "workspace") {
       workspaceRoot = classified.absolutePath;
     }
   }
@@ -223,13 +229,36 @@ export function discoverWorkspace(options = {}) {
         repoRoot = cwdClassified.absolutePath;
         repoSource = "cwd_repo";
         pushBasis(repoBasis, "当前终端目录本身就是项目仓库。");
-      } else if (cwdClassified.kind === "workspace" || cwdClassified.kind === "directory") {
+      } else if (cwdClassified.kind === "workspace") {
         workspaceRoot = cwdClassified.absolutePath;
+      } else if (cwdClassified.kind === "directory") {
+        repoRoot = cwdClassified.absolutePath;
+        repoSource = "cwd_repo";
+        pushBasis(repoBasis, "当前终端目录默认作为项目目录。");
       } else if (looksLikeProjectRoot(cwd)) {
         repoRoot = cwd;
         repoSource = "cwd_repo";
         pushBasis(repoBasis, "当前终端目录具备项目仓库特征。");
       }
+    }
+  }
+
+  if (!repoRoot && docsEntries.length && !treatCwdAsHomeWorkspace) {
+    const cwdClassified = classifyExplicitPath(cwd);
+    if (cwdClassified.kind === "repo") {
+      repoRoot = cwdClassified.absolutePath;
+      repoSource = "cwd_repo";
+      pushBasis(repoBasis, "当前终端目录本身就是项目仓库。");
+    } else if (cwdClassified.kind === "directory") {
+      repoRoot = cwdClassified.absolutePath;
+      repoSource = "cwd_repo";
+      pushBasis(repoBasis, "当前终端目录默认作为项目目录。");
+    } else if (cwdClassified.kind === "workspace") {
+      workspaceRoot = workspaceRoot || cwdClassified.absolutePath;
+    } else if (looksLikeProjectRoot(cwd)) {
+      repoRoot = cwd;
+      repoSource = "cwd_repo";
+      pushBasis(repoBasis, "当前终端目录具备项目仓库特征。");
     }
   }
 
@@ -312,8 +341,10 @@ export function discoverWorkspace(options = {}) {
       } else if (inferred.source === "cwd") {
         docsSource = "cwd_docs";
         pushBasis(docsBasis, "当前终端目录本身就是开发文档目录或文件。");
-      } else if (inferred.source === "repo_docs") {
-        pushBasis(docsBasis, "已使用目标仓库中的 `docs/` 目录作为默认开发文档入口。");
+      } else if (inferred.source === "repo_docs_dir") {
+        pushBasis(docsBasis, "已使用项目目录中的 `docs/` 目录作为默认开发文档入口。");
+      } else if (inferred.source === "repo_doc_file") {
+        pushBasis(docsBasis, "已使用项目目录中的顶层文档文件作为默认开发文档入口。");
       }
     }
   }
@@ -384,6 +415,9 @@ export function resolveRepoRoot(options = {}) {
     }
     return { ok: false, message: renderMissingRepoMessage([classified.absolutePath], inferred.candidates) };
   }
+  if (classified.kind === "directory") {
+    return { ok: true, repoRoot: classified.absolutePath };
+  }
 
   if (!explicitRepoRoot && !explicitInputPath && isImplicitHomeDirectory(cwd)) {
     return {
@@ -401,8 +435,5 @@ export function resolveRepoRoot(options = {}) {
     return { ok: true, repoRoot: cwd };
   }
 
-  return {
-    ok: false,
-    message: "当前目录不是项目仓库。请切到项目目录，或传入一个项目路径/开发文档路径。",
-  };
+  return { ok: true, repoRoot: cwd };
 }
