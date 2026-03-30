@@ -143,11 +143,13 @@ test("helloloop skill 明确要求优先走主 CLI，而不是手工模拟流程
 
   assert.match(skill, /优先执行 `npx helloloop` 或 `npx helloloop <PATH>`/);
   assert.match(skill, /不允许接管普通 Codex 会话/);
+  assert.match(skill, /仅仅提到 `helloloop` 仓库、插件名、README、代码、测试、issue、release、npm 包名，都不算调用/);
   assert.match(skill, /不允许在对话里手工模拟/);
   assert.match(skill, /默认执行映射/);
   assert.match(manifest.interface.longDescription, /只有在用户显式调用 helloloop skill/);
   assert.match(manifest.interface.longDescription, /先分析、再展示确认单、确认后自动接续推进/);
   assert.match(manifest.interface.defaultPrompt[0], /普通 Codex 会话不要自动接管/);
+  assert.match(manifest.interface.defaultPrompt[0], /仅仅提到 helloloop 仓库、插件名、README、代码、测试、issue、release、npm 包名，都不算调用/);
   assert.match(manifest.interface.defaultPrompt[0], /优先执行 npx helloloop 或 npx helloloop <PATH>/);
 });
 

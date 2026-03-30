@@ -130,6 +130,8 @@ function cliExecutable(binDir, commandName) {
 }
 
 function buildCliEnv(binDir, extra = {}) {
+  const isolatedHome = path.join(path.dirname(binDir), "user-home");
+  const parsedHome = path.parse(isolatedHome);
   return {
     ...process.env,
     PATH: [binDir, process.env.PATH || ""].join(path.delimiter),
@@ -137,6 +139,10 @@ function buildCliEnv(binDir, extra = {}) {
     HELLOLOOP_CLAUDE_EXECUTABLE: cliExecutable(binDir, "claude"),
     HELLOLOOP_GEMINI_EXECUTABLE: cliExecutable(binDir, "gemini"),
     HELLOLOOP_SETTINGS_FILE: path.join(binDir, "settings.json"),
+    HOME: isolatedHome,
+    USERPROFILE: isolatedHome,
+    HOMEDRIVE: parsedHome.root ? parsedHome.root.replace(/[\\/]+$/, "") : "",
+    HOMEPATH: parsedHome.root ? isolatedHome.slice(parsedHome.root.length - 1) : isolatedHome,
     ...extra,
   };
 }

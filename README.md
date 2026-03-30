@@ -19,6 +19,7 @@
 这意味着：
 
 - 三宿主都只在用户显式调用 `helloloop` 时介入；普通会话不会被 HelloLoop 自动接管
+- 在 `Codex` 中，只有显式输入 `$helloloop` / `#helloloop` / `helloloop:helloloop` 才算调用；仅仅提到 `helloloop` 仓库、README、代码、测试、release、npm 包名，都不算调用
 - 无论在终端还是在 `Codex` / `Claude` / `Gemini` 宿主内，只要用户未明确指定引擎，`HelloLoop` 都会先询问本轮执行引擎
 - 当前宿主、项目历史、用户历史只作为推荐依据，不会自动替你选中引擎
 - 如果你已经显式指定，或已经在首轮确认中明确选定了引擎，本轮就固定按该引擎执行

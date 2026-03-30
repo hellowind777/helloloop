@@ -73,6 +73,8 @@ function cliExecutable(binDir, commandName) {
 }
 
 function buildCliEnv(binDir, extra = {}) {
+  const isolatedHome = path.join(path.dirname(binDir), "user-home");
+  const parsedHome = path.parse(isolatedHome);
   return {
     ...process.env,
     PATH: [binDir, process.env.PATH || ""].join(path.delimiter),
@@ -80,6 +82,10 @@ function buildCliEnv(binDir, extra = {}) {
     HELLOLOOP_CLAUDE_EXECUTABLE: cliExecutable(binDir, "claude"),
     HELLOLOOP_GEMINI_EXECUTABLE: cliExecutable(binDir, "gemini"),
     HELLOLOOP_SETTINGS_FILE: path.join(binDir, "settings.json"),
+    HOME: isolatedHome,
+    USERPROFILE: isolatedHome,
+    HOMEDRIVE: parsedHome.root ? parsedHome.root.replace(/[\\/]+$/, "") : "",
+    HOMEPATH: parsedHome.root ? isolatedHome.slice(parsedHome.root.length - 1) : isolatedHome,
     ...extra,
   };
 }
@@ -272,6 +278,44 @@ test("确认单会展示路径判断来源和把握，而不是黑盒推断", ()
     assert.match(result.stdout, /文档来源：命令附带路径/);
     assert.match(result.stdout, /仓库来源：文档中的路径线索/);
     assert.match(result.stdout, /仓库把握：中/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("文档路径线索不会把带 package.json 的用户主目录误判成项目仓库", () => {
+  const tempRoot = fs.mkdtempSync(path.join(path.dirname(repoRoot), "helloloop-home-hint-"));
+  const fakeBin = path.join(tempRoot, "bin");
+  const fakeHome = path.join(tempRoot, "user-home");
+  const docsRoot = path.join(fakeHome, "AppData", "Local", "Temp", "resolution-case", "docs");
+  const tempRepo = path.join(fakeHome, "AppData", "Local", "Temp", "resolution-case", "project-alpha");
+  const fakeHomeDrive = path.parse(fakeHome).root.replace(/[\\/]+$/, "");
+  const fakeHomePath = fakeHome.slice(path.parse(fakeHome).root.length - 1);
+
+  createFakeCodex(fakeBin, sampleAnalysisPayload());
+  writeJson(path.join(fakeHome, "package.json"), { name: "home-shell" });
+  writeText(path.join(docsRoot, "plan.md"), [
+    "# Plan",
+    `- 目标产物位于：${path.join(tempRepo, "src", "index.js").replaceAll("\\", "/")}`,
+  ].join("\n"));
+  writeJson(path.join(tempRepo, "package.json"), { name: "project-alpha" });
+  writeText(path.join(tempRepo, "src", "index.js"), "console.log('alpha');\n");
+
+  const result = spawnHelloLoop([docsRoot], {
+    env: buildCliEnv(fakeBin, {
+      HOME: fakeHome,
+      USERPROFILE: fakeHome,
+      HOMEDRIVE: fakeHomeDrive,
+      HOMEPATH: fakeHomePath,
+    }),
+    input: "1\nn\n",
+  });
+
+  try {
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /目标仓库：.*project-alpha/);
+    assert.ok(!fs.existsSync(path.join(fakeHome, ".helloloop", "backlog.json")));
+    assert.ok(fs.existsSync(path.join(tempRepo, ".helloloop", "backlog.json")));
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

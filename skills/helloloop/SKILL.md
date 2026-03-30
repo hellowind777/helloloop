@@ -1,6 +1,6 @@
 ---
 name: helloloop
-description: 仅当用户显式调用 `$helloloop` / `#helloloop` / `helloloop:helloloop`，或明确要求使用 HelloLoop 按开发文档持续接续开发时使用。
+description: 仅当用户显式调用 `$helloloop` / `#helloloop` / `helloloop:helloloop` 时使用。
 ---
 
 # HelloLoop
@@ -9,7 +9,8 @@ description: 仅当用户显式调用 `$helloloop` / `#helloloop` / `helloloop:h
 
 ## 强制入口规则
 
-- 未显式调用 `helloloop`，且用户也没有明确要求“使用 HelloLoop / 使用 helloloop 插件 / 走 HelloLoop 流程”时，不允许接管普通 Codex 会话。
+- 只有用户显式调用 `$helloloop` / `#helloloop` / `helloloop:helloloop` 时，才允许进入 HelloLoop；未显式调用时，不允许接管普通 Codex 会话。
+- 仅仅提到 `helloloop` 仓库、插件名、README、代码、测试、issue、release、npm 包名，都不算调用 HelloLoop。
 - 用户显式调用 `$helloloop` / `#helloloop` / `helloloop:helloloop` 时，默认必须优先执行 `npx helloloop` 或 `npx helloloop <PATH>`；如果用户又明确指定了执行引擎，也允许使用 `npx helloloop codex|claude|gemini ...`。
 - 用户没有明确指定执行引擎时，不允许由 skill 自行补成 `codex` / `claude` / `gemini`；必须让 `HelloLoop` 先完成引擎确认。
 - 不允许在对话里手工模拟 `HelloLoop` 的分析、确认单、backlog 编排和自动续跑流程来代替 CLI。

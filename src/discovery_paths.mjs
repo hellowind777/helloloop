@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { fileExists } from "./common.mjs";
@@ -59,6 +60,26 @@ const IGNORED_PROJECT_SEGMENTS = new Set([
   "venv",
 ]);
 
+const PREFERRED_ANCESTOR_SEGMENTS = new Set([
+  ".cache",
+  ".next",
+  ".nuxt",
+  ".pnpm",
+  ".turbo",
+  ".venv",
+  ".yarn",
+  "__pycache__",
+  "build",
+  "cache",
+  "coverage",
+  "dist",
+  "node_modules",
+  "out",
+  "target",
+  "vendor",
+  "venv",
+]);
+
 function listImmediateDirectories(directoryPath) {
   if (!pathExists(directoryPath) || !fs.statSync(directoryPath).isDirectory()) {
     return [];
@@ -99,13 +120,52 @@ function hasIgnoredProjectBasename(targetPath) {
   return IGNORED_PROJECT_SEGMENTS.has(path.basename(targetPath).toLowerCase());
 }
 
+function canonicalPath(targetPath) {
+  if (!targetPath) {
+    return "";
+  }
+
+  try {
+    const resolved = fs.realpathSync.native
+      ? fs.realpathSync.native(targetPath)
+      : fs.realpathSync(targetPath);
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+  } catch {
+    const resolved = path.resolve(targetPath);
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+  }
+}
+
+function isImplicitHomeDirectory(targetPath) {
+  return Boolean(targetPath) && canonicalPath(targetPath) === canonicalPath(os.homedir());
+}
+
+function isUserProfileLikeDirectory(targetPath) {
+  if (!targetPath) {
+    return false;
+  }
+
+  const resolved = path.resolve(targetPath);
+  const normalized = resolved.replaceAll("\\", "/");
+  if (/^[A-Za-z]:\/Users\/[^/]+$/i.test(normalized)) {
+    return true;
+  }
+  if (/^\/Users\/[^/]+$/.test(normalized)) {
+    return true;
+  }
+  if (/^\/home\/[^/]+$/.test(normalized)) {
+    return true;
+  }
+  return false;
+}
+
 function choosePreferredCandidate(candidates, directory) {
   return candidates.find((candidate) => {
     const relativeToLeaf = path.relative(candidate, directory);
     return relativeToLeaf
       .split(/[\\/]+/)
       .filter(Boolean)
-      .some((segment) => IGNORED_PROJECT_SEGMENTS.has(segment.toLowerCase()));
+      .some((segment) => PREFERRED_ANCESTOR_SEGMENTS.has(segment.toLowerCase()));
   })
     || candidates.find((candidate) => !hasIgnoredProjectBasename(candidate))
     || candidates[0]
@@ -231,6 +291,10 @@ export function findPreferredRepoRootFromPath(startPath) {
   for (const current of walkUpDirectories(directory)) {
     if (pathExists(path.join(current, ".git"))) {
       return current;
+    }
+
+    if (isImplicitHomeDirectory(current) || isUserProfileLikeDirectory(current)) {
+      continue;
     }
 
     if (looksLikeStrongProjectRoot(current)) {
