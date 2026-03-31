@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { ensureDir, fileExists, nowIso, readJson, timestampForFile, writeJson } from "./common.mjs";
 import { loadGlobalConfig } from "./global_config.mjs";
+import { normalizeTerminalConcurrencySettings } from "./runtime_settings.mjs";
 
 const SESSION_DIR_NAME = "terminal-sessions";
 const RUNTIME_DIR_NAME = "runtime";
@@ -31,27 +32,6 @@ function isPidAlive(pid) {
   } catch (error) {
     return String(error?.code || "") === "EPERM";
   }
-}
-
-function normalizeNonNegativeInteger(value, fallbackValue) {
-  if (value === null || value === undefined || value === "") {
-    return fallbackValue;
-  }
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return fallbackValue;
-  }
-  return Math.floor(parsed);
-}
-
-export function normalizeTerminalConcurrencySettings(settings = {}) {
-  const source = settings && typeof settings === "object" ? settings : {};
-  return {
-    enabled: source.enabled !== false,
-    visibleMax: normalizeNonNegativeInteger(source.visibleMax, 8),
-    backgroundMax: normalizeNonNegativeInteger(source.backgroundMax, 8),
-    totalMax: normalizeNonNegativeInteger(source.totalMax, 8),
-  };
 }
 
 function resolveTerminalRuntimeConfig(options = {}) {

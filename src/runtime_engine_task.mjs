@@ -3,6 +3,7 @@ import path from "node:path";
 import { ensureDir, nowIso, tailText, writeJson, writeText } from "./common.mjs";
 import { getEngineDisplayName, normalizeEngineName } from "./engine_metadata.mjs";
 import { resolveEngineInvocation } from "./engine_process_support.mjs";
+import { refreshHostContinuationArtifacts } from "./host_continuation.mjs";
 import { isHostLeaseAlive } from "./host_lease.mjs";
 import {
   buildRuntimeRecoveryPrompt,
@@ -52,6 +53,12 @@ export async function runEngineTask({
     outputPrefix: prefix,
     hardRetryBudget: recoveryPolicy.hardRetryDelaysSeconds.length,
     softRetryBudget: recoveryPolicy.softRetryDelaysSeconds.length,
+  }, () => {
+    try {
+      refreshHostContinuationArtifacts(context);
+    } catch {
+      // ignore continuation snapshot refresh failures during heartbeat writes
+    }
   });
 
   const recoveryHistory = [];

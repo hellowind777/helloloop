@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { renderInputIssueLines, renderUserIntentLines } from "./analyze_user_input.mjs";
+import { resolveFullAutoMainlineOptions } from "./auto_execution_options.mjs";
 import { analyzeExecution, summarizeBacklog } from "./backlog.mjs";
 import { loadPolicy, loadVerifyCommands } from "./config.mjs";
 import { getEngineDisplayName } from "./engine_metadata.mjs";
@@ -167,7 +168,7 @@ export function resolveAutoRunMaxTasks(backlog, options = {}) {
 
 export function renderAnalyzeConfirmation(context, analysis, backlog, options = {}, discovery = {}) {
   const summary = summarizeBacklog(backlog);
-  const execution = analyzeExecution(backlog, options);
+  const execution = analyzeExecution(backlog, resolveFullAutoMainlineOptions(options));
   const policy = loadPolicy(context);
   const verifyCommands = resolvePreviewVerifyCommands(context, execution);
   const autoRunMaxTasks = resolveAutoRunMaxTasks(backlog, options);
@@ -213,6 +214,7 @@ export function renderAnalyzeConfirmation(context, analysis, backlog, options = 
     execution.blockedReason
       ? `- 当前阻塞：${execution.blockedReason}`
       : "- 当前阻塞：无",
+    "- 风险策略：确认后进入主线自动执行时，medium/high/critical 任务不会单独卡住续跑；手动 run-once/run-loop 仍需显式允许高风险",
     "- 偏差修正：按 backlog 优先级执行；如果分析识别出偏差修正任务，会先收口再继续后续开发",
     autoRunMaxTasks > 0
       ? `- 自动推进：最多 ${autoRunMaxTasks} 个任务；若主线终态复核仍发现缺口，则到达上限后暂停`

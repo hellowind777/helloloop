@@ -2,7 +2,7 @@ import {
   rememberEngineSelection,
   resolveEngineSelection,
 } from "./engine_selection.mjs";
-import { nowIso } from "./common.mjs";
+import { fileExists, nowIso, readJson } from "./common.mjs";
 import {
   loadBacklog,
   loadPolicy,
@@ -13,6 +13,72 @@ import {
 } from "./config.mjs";
 import { getTask, selectNextTask, unresolvedDependencies, updateTask } from "./backlog.mjs";
 import { makeRunDir } from "./runner_status.mjs";
+import { shouldPromptForEngineSelection } from "./execution_interactivity.mjs";
+
+function isPidAlive(pid) {
+  const value = Number(pid || 0);
+  if (!Number.isFinite(value) || value <= 0) {
+    return false;
+  }
+  try {
+    process.kill(value, 0);
+    return true;
+  } catch (error) {
+    return String(error?.code || "") === "EPERM";
+  }
+}
+
+function hasLiveSupervisor(context) {
+  if (!fileExists(context.supervisorStateFile)) {
+    return false;
+  }
+  try {
+    const supervisor = readJson(context.supervisorStateFile);
+    const status = String(supervisor?.status || "").trim();
+    if (!["launching", "running"].includes(status)) {
+      return false;
+    }
+    return isPidAlive(supervisor?.pid);
+  } catch {
+    return false;
+  }
+}
+
+function recoverStaleInProgressTasks(context, backlog, options = {}) {
+  const staleTasks = Array.isArray(backlog?.tasks)
+    ? backlog.tasks.filter((task) => task?.status === "in_progress")
+    : [];
+  if (!staleTasks.length) {
+    return backlog;
+  }
+
+  let shouldRecover = !hasLiveSupervisor(context);
+  if (!shouldRecover && fileExists(context.statusFile)) {
+    try {
+      const latestStatus = readJson(context.statusFile);
+      const currentSessionId = String(options.supervisorSessionId || "").trim();
+      const recordedSessionId = String(latestStatus?.sessionId || "").trim();
+      if (currentSessionId && recordedSessionId && currentSessionId !== recordedSessionId) {
+        shouldRecover = true;
+      }
+    } catch {
+      // ignore malformed status files and keep current decision
+    }
+  }
+  if (!shouldRecover) {
+    return backlog;
+  }
+
+  for (const task of staleTasks) {
+    updateTask(backlog, task.id, {
+      status: "pending",
+      startedAt: "",
+      finishedAt: "",
+    });
+  }
+  saveBacklog(context, backlog);
+  return backlog;
+}
 
 function resolveTask(backlog, options) {
   if (options.taskId) {
@@ -28,7 +94,7 @@ function resolveTask(backlog, options) {
 export async function resolveExecutionSetup(context, options = {}) {
   const policy = loadPolicy(context);
   const projectConfig = loadProjectConfig(context);
-  const backlog = loadBacklog(context);
+  const backlog = recoverStaleInProgressTasks(context, loadBacklog(context), options);
   const task = resolveTask(backlog, options);
   if (!task) {
     return {
@@ -52,7 +118,7 @@ export async function resolveExecutionSetup(context, options = {}) {
       context,
       policy,
       options,
-      interactive: !options.yes,
+      interactive: shouldPromptForEngineSelection(options),
     });
 
   return {

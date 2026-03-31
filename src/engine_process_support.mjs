@@ -26,6 +26,7 @@ export function runChild(command, args, options = {}) {
       },
       stdio: ["pipe", "pipe", "pipe"],
       shell: Boolean(options.shell),
+      windowsHide: process.platform === "win32",
     });
 
     let stdout = "";

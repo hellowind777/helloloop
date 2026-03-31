@@ -1,20 +1,28 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
 
 import { createContext } from "./context.mjs";
 import { nowIso, readJson, writeJson, readTextIfExists, timestampForFile } from "./common.mjs";
+import { refreshHostContinuationArtifacts } from "./host_continuation.mjs";
 import { isHostLeaseAlive, renderHostLeaseLabel, resolveHostLease } from "./host_lease.mjs";
+import { spawnNodeProcess } from "./node_process_launch.mjs";
 import { runLoop, runOnce } from "./runner.mjs";
+import {
+  FINAL_SUPERVISOR_STATUSES,
+  hasActiveSupervisor,
+  isTrackedPidAlive,
+  readJsonIfExists,
+  readSupervisorState,
+  writeActiveSupervisorState,
+  writeSupervisorState,
+} from "./supervisor_state.mjs";
 import {
   bindBackgroundTerminalSession,
   cancelPreparedTerminalSessionBackground,
   finalizePreparedTerminalSessionBackground,
   prepareCurrentTerminalSessionForBackground,
 } from "./terminal_session_limits.mjs";
-
-const ACTIVE_STATUSES = new Set(["launching", "running"]);
-const FINAL_STATUSES = new Set(["completed", "failed", "stopped"]);
+import { registerActiveSession, unregisterActiveSession } from "./workspace_registry.mjs";
 
 function removeIfExists(filePath) {
   try {
@@ -24,62 +32,66 @@ function removeIfExists(filePath) {
   }
 }
 
-function readJsonIfExists(filePath) {
-  return fs.existsSync(filePath) ? readJson(filePath) : null;
-}
-
-function isPidAlive(pid) {
-  const numberPid = Number(pid || 0);
-  if (!Number.isFinite(numberPid) || numberPid <= 0) {
-    return false;
-  }
-  try {
-    process.kill(numberPid, 0);
-    return true;
-  } catch (error) {
-    return String(error?.code || "") === "EPERM";
-  }
-}
-
-function buildState(context, patch = {}) {
-  const current = readJsonIfExists(context.supervisorStateFile) || {};
-  return {
-    ...current,
-    ...patch,
-    updatedAt: nowIso(),
-  };
-}
-
-function writeState(context, patch) {
-  writeJson(context.supervisorStateFile, buildState(context, patch));
-}
-
 function toSerializableOptions(options = {}) {
   return JSON.parse(JSON.stringify(options));
 }
 
-export function readSupervisorState(context) {
-  return readJsonIfExists(context.supervisorStateFile);
+function refreshContinuation(context, sessionId) {
+  try {
+    refreshHostContinuationArtifacts(context, { sessionId });
+  } catch {
+    // ignore continuation snapshot refresh failures
+  }
 }
 
-export function hasActiveSupervisor(context) {
-  const state = readSupervisorState(context);
-  return Boolean(state?.status && ACTIVE_STATUSES.has(String(state.status)) && isPidAlive(state.pid));
+function writeStoppedState(context, request, message) {
+  const payload = {
+    sessionId: request.sessionId,
+    command: request.command,
+    exitCode: 1,
+    ok: false,
+    stopped: true,
+    error: message,
+  };
+  writeJson(context.supervisorResultFile, payload);
+  writeSupervisorState(context, {
+    sessionId: request.sessionId,
+    command: request.command,
+    status: "stopped",
+    exitCode: payload.exitCode,
+    message,
+    completedAt: nowIso(),
+  });
+}
+
+function buildSupervisorSessionState(sessionId, command, lease, pid, message) {
+  return {
+    sessionId,
+    status: "running",
+    command,
+    lease,
+    startedAt: nowIso(),
+    pid,
+    guardianPid: pid,
+    workerPid: 0,
+    message,
+  };
 }
 
 export function renderSupervisorLaunchSummary(session) {
   return [
-    `HelloLoop supervisor 已启动：${session.sessionId}`,
+    `HelloLoop 后台守护进程已启动：${session.sessionId}`,
     `- 宿主租约：${renderHostLeaseLabel(session.lease)}`,
     "- 当前 turn 若被中断，只要当前宿主窗口仍存活，本轮自动执行会继续。",
+    "- 守护进程会在 worker 异常退出后按设置自动重拉起，尽量保持后台持续活跃。",
     "- 如需主动停止，直接关闭当前 CLI 窗口即可。",
   ].join("\n");
 }
 
 export function launchSupervisedCommand(context, command, options = {}) {
   const existing = readSupervisorState(context);
-  if (existing?.status && ACTIVE_STATUSES.has(String(existing.status)) && isPidAlive(existing.pid)) {
-    throw new Error(`已有 HelloLoop supervisor 正在运行：${existing.sessionId || "unknown"}`);
+  if (hasActiveSupervisor(context)) {
+    throw new Error(`已有 HelloLoop supervisor 正在运行：${existing?.sessionId || "unknown"}`);
   }
 
   const sessionId = timestampForFile();
@@ -109,47 +121,62 @@ export function launchSupervisedCommand(context, command, options = {}) {
   removeIfExists(context.supervisorStdoutFile);
   removeIfExists(context.supervisorStderrFile);
   writeJson(context.supervisorRequestFile, request);
-  writeState(context, {
+  writeActiveSupervisorState(context, {
     sessionId,
     status: "launching",
     command,
     lease,
     startedAt: nowIso(),
     pid: 0,
+    guardianPid: 0,
+    workerPid: 0,
   });
+  refreshContinuation(context, sessionId);
 
   const stdoutFd = fs.openSync(context.supervisorStdoutFile, "w");
   const stderrFd = fs.openSync(context.supervisorStderrFile, "w");
+
   try {
-    const child = spawn(process.execPath, [
-      path.join(context.bundleRoot, "bin", "helloloop.js"),
-      "__supervise",
-      "--session-file",
-      context.supervisorRequestFile,
-    ], {
+    const child = spawnNodeProcess({
+      args: [
+        path.join(context.bundleRoot, "bin", "helloloop.js"),
+        "__supervise",
+        "--session-file",
+        context.supervisorRequestFile,
+      ],
       cwd: context.repoRoot,
       detached: true,
-      shell: false,
-      windowsHide: true,
       stdio: ["ignore", stdoutFd, stderrFd],
       env: {
-        ...process.env,
         HELLOLOOP_SUPERVISOR_ACTIVE: "1",
       },
     });
+
     finalizePreparedTerminalSessionBackground(child.pid ?? 0, {
       command,
       repoRoot: context.repoRoot,
       sessionId,
     });
     child.unref();
-    writeState(context, {
+
+    writeActiveSupervisorState(
+      context,
+      buildSupervisorSessionState(sessionId, command, lease, child.pid ?? 0, "后台守护进程正在运行。"),
+    );
+    refreshContinuation(context, sessionId);
+
+    registerActiveSession({
       sessionId,
-      status: "running",
+      repoRoot: context.repoRoot,
+      configDirName: context.configDirName,
       command,
+      pid: child.pid ?? 0,
+      guardianPid: child.pid ?? 0,
       lease,
       startedAt: nowIso(),
-      pid: child.pid ?? 0,
+      supervisorStateFile: context.supervisorStateFile,
+      supervisorResultFile: context.supervisorResultFile,
+      statusFile: context.statusFile,
     });
 
     return {
@@ -158,6 +185,7 @@ export function launchSupervisedCommand(context, command, options = {}) {
       lease,
     };
   } catch (error) {
+    unregisterActiveSession(sessionId);
     cancelPreparedTerminalSessionBackground({
       command,
       repoRoot: context.repoRoot,
@@ -180,7 +208,7 @@ export async function waitForSupervisedResult(context, session, options = {}) {
     }
 
     const state = readSupervisorState(context);
-    if (state?.sessionId === session.sessionId && FINAL_STATUSES.has(String(state.status || ""))) {
+    if (state?.sessionId === session.sessionId && FINAL_SUPERVISOR_STATUSES.has(String(state.status || ""))) {
       return {
         sessionId: session.sessionId,
         command: state.command || "",
@@ -190,7 +218,7 @@ export async function waitForSupervisedResult(context, session, options = {}) {
       };
     }
 
-    if (!isPidAlive(session.pid)) {
+    if (!isTrackedPidAlive(session.pid)) {
       return {
         sessionId: session.sessionId,
         command: state?.command || "",
@@ -211,44 +239,60 @@ export async function runSupervisedCommandFromSessionFile(sessionFile) {
   const context = createContext(request.context || {});
   const command = String(request.command || "").trim();
   const lease = request.lease || {};
-  bindBackgroundTerminalSession(request.terminalSessionFile || "", {
-    command,
-    repoRoot: context.repoRoot,
-    sessionId: request.sessionId,
-  });
+  const guardianManaged = request.options?.guardianManaged === true
+    || process.env.HELLOLOOP_SUPERVISOR_GUARDIAN_ACTIVE === "1";
+  const guardianPid = guardianManaged
+    ? Number(request.options?.guardianPid || process.env.HELLOLOOP_SUPERVISOR_GUARDIAN_PID || process.pid)
+    : 0;
+  const supervisorPid = guardianPid > 0 ? guardianPid : process.pid;
+
+  if (!guardianManaged) {
+    bindBackgroundTerminalSession(request.terminalSessionFile || "", {
+      command,
+      repoRoot: context.repoRoot,
+      sessionId: request.sessionId,
+    });
+  }
+
   const commandOptions = {
     ...(request.options || {}),
     hostLease: lease,
   };
-
-  writeState(context, {
+  writeActiveSupervisorState(context, {
     sessionId: request.sessionId,
     command,
     status: "running",
     lease,
-    pid: process.pid,
+    pid: supervisorPid,
+    guardianPid,
+    workerPid: guardianManaged ? process.pid : 0,
     startedAt: nowIso(),
   });
+  refreshContinuation(context, request.sessionId);
+
+  if (!guardianManaged) {
+    registerActiveSession({
+      sessionId: request.sessionId,
+      repoRoot: context.repoRoot,
+      configDirName: context.configDirName,
+      command,
+      pid: supervisorPid,
+      guardianPid,
+      lease,
+      startedAt: nowIso(),
+      supervisorStateFile: context.supervisorStateFile,
+      supervisorResultFile: context.supervisorResultFile,
+      statusFile: context.statusFile,
+    });
+  }
 
   try {
     if (!isHostLeaseAlive(lease)) {
-      const stopped = {
-        sessionId: request.sessionId,
-        command,
-        exitCode: 1,
-        ok: false,
-        stopped: true,
-        error: "检测到宿主窗口已关闭，HelloLoop supervisor 未继续执行。",
-      };
-      writeJson(context.supervisorResultFile, stopped);
-      writeState(context, {
-        sessionId: request.sessionId,
-        command,
-        status: "stopped",
-        exitCode: stopped.exitCode,
-        message: stopped.error,
-        completedAt: nowIso(),
-      });
+      writeStoppedState(context, request, "检测到宿主窗口已关闭，HelloLoop supervisor 未继续执行。");
+      refreshContinuation(context, request.sessionId);
+      if (!guardianManaged) {
+        unregisterActiveSession(request.sessionId);
+      }
       return;
     }
 
@@ -263,7 +307,7 @@ export async function runSupervisedCommandFromSessionFile(sessionFile) {
         results,
       };
       writeJson(context.supervisorResultFile, payload);
-      writeState(context, {
+      writeSupervisorState(context, {
         sessionId: request.sessionId,
         command,
         status: payload.ok ? "completed" : (payload.results.some((item) => item.kind === "host-lease-stopped") ? "stopped" : "failed"),
@@ -271,6 +315,10 @@ export async function runSupervisedCommandFromSessionFile(sessionFile) {
         message: payload.ok ? "" : (payload.results.find((item) => !item.ok)?.summary || ""),
         completedAt: nowIso(),
       });
+      refreshContinuation(context, request.sessionId);
+      if (!guardianManaged) {
+        unregisterActiveSession(request.sessionId);
+      }
       return;
     }
 
@@ -284,7 +332,7 @@ export async function runSupervisedCommandFromSessionFile(sessionFile) {
         result,
       };
       writeJson(context.supervisorResultFile, payload);
-      writeState(context, {
+      writeSupervisorState(context, {
         sessionId: request.sessionId,
         command,
         status: payload.ok ? "completed" : (result.kind === "host-lease-stopped" ? "stopped" : "failed"),
@@ -292,6 +340,10 @@ export async function runSupervisedCommandFromSessionFile(sessionFile) {
         message: result.summary || result.finalMessage || "",
         completedAt: nowIso(),
       });
+      refreshContinuation(context, request.sessionId);
+      if (!guardianManaged) {
+        unregisterActiveSession(request.sessionId);
+      }
       return;
     }
 
@@ -305,7 +357,7 @@ export async function runSupervisedCommandFromSessionFile(sessionFile) {
       error: String(error?.stack || error || ""),
     };
     writeJson(context.supervisorResultFile, payload);
-    writeState(context, {
+    writeSupervisorState(context, {
       sessionId: request.sessionId,
       command,
       status: "failed",
@@ -313,5 +365,9 @@ export async function runSupervisedCommandFromSessionFile(sessionFile) {
       message: payload.error,
       completedAt: nowIso(),
     });
+    refreshContinuation(context, request.sessionId);
+    if (!guardianManaged) {
+      unregisterActiveSession(request.sessionId);
+    }
   }
 }

@@ -5,9 +5,11 @@ import {
   assertPathInside,
   codexBundleEntries,
   copyBundleEntries,
+  isSamePath,
   readExistingJsonOrThrow,
   removePathIfExists,
   removeTargetIfNeeded,
+  runtimeBundleEntries,
   resolveCodexLocalRoot,
   resolveHomeDir,
 } from "./install_shared.mjs";
@@ -145,6 +147,8 @@ export function installCodexHost(bundleRoot, options = {}) {
   const configFile = path.join(resolvedCodexHome, "config.toml");
   const manifestFile = path.join(bundleRoot, ".codex-plugin", "plugin.json");
   const existingMarketplace = readExistingJsonOrThrow(marketplaceFile, "Codex marketplace 配置");
+  const bundleIsPluginRoot = isSamePath(bundleRoot, targetPluginRoot);
+  const bundleIsInstalledRoot = isSamePath(bundleRoot, targetInstalledPluginRoot);
 
   if (!fileExists(manifestFile)) {
     throw new Error(`未找到 Codex 插件 manifest：${manifestFile}`);
@@ -152,16 +156,24 @@ export function installCodexHost(bundleRoot, options = {}) {
 
   assertPathInside(resolvedLocalRoot, targetPluginRoot, "Codex 本地插件目录");
   assertPathInside(resolvedCodexHome, targetPluginCacheRoot, "Codex 插件缓存目录");
-  removeTargetIfNeeded(targetPluginRoot, options.force);
-  removeTargetIfNeeded(targetPluginCacheRoot, options.force);
+  if (!bundleIsPluginRoot) {
+    removeTargetIfNeeded(targetPluginRoot, options.force);
+  }
+  if (!bundleIsInstalledRoot) {
+    removeTargetIfNeeded(targetPluginCacheRoot, options.force);
+  }
 
   ensureDir(targetPluginsRoot);
-  ensureDir(targetPluginRoot);
-  ensureDir(targetInstalledPluginRoot);
-  copyBundleEntries(bundleRoot, targetPluginRoot, codexBundleEntries);
-  copyBundleEntries(bundleRoot, targetInstalledPluginRoot, codexBundleEntries);
-  removePathIfExists(path.join(targetPluginRoot, ".git"));
-  removePathIfExists(path.join(targetInstalledPluginRoot, ".git"));
+  if (!bundleIsPluginRoot) {
+    ensureDir(targetPluginRoot);
+    copyBundleEntries(bundleRoot, targetPluginRoot, runtimeBundleEntries);
+    removePathIfExists(path.join(targetPluginRoot, ".git"));
+  }
+  if (!bundleIsInstalledRoot) {
+    ensureDir(targetInstalledPluginRoot);
+    copyBundleEntries(bundleRoot, targetInstalledPluginRoot, codexBundleEntries);
+    removePathIfExists(path.join(targetInstalledPluginRoot, ".git"));
+  }
 
   ensureDir(path.dirname(marketplaceFile));
   updateCodexMarketplace(marketplaceFile, existingMarketplace);

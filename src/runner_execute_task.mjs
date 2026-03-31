@@ -3,6 +3,7 @@ import path from "node:path";
 import { rememberEngineSelection } from "./engine_selection.mjs";
 import { getEngineDisplayName } from "./engine_metadata.mjs";
 import { ensureDir, nowIso, writeText } from "./common.mjs";
+import { refreshHostContinuationArtifacts } from "./host_continuation.mjs";
 import { isHostLeaseAlive } from "./host_lease.mjs";
 import { saveBacklog, writeStatus } from "./config.mjs";
 import { reviewTaskCompletion } from "./completion_review.mjs";
@@ -276,6 +277,9 @@ export async function executeSingleTask(context, options = {}) {
     runDir: execution.runDir,
     summary: "",
     message: `开始执行任务：${execution.task.title}`,
+  });
+  refreshHostContinuationArtifacts(context, {
+    sessionId: options.supervisorSessionId || "",
   });
 
   const state = {

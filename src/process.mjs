@@ -19,6 +19,7 @@ export async function runCodexExec({ context, prompt, runDir, policy, hostLease 
     policy,
     executionMode: "execute",
     outputPrefix: "codex",
+    skipGitRepoCheck: true,
     hostLease,
   });
 }
@@ -32,6 +33,7 @@ export async function runEngineExec({ engine, context, prompt, runDir, policy, h
     policy,
     executionMode: "execute",
     outputPrefix: engine,
+    skipGitRepoCheck: engine === "codex",
     hostLease,
   });
 }

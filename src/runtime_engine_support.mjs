@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { createActivityProjector } from "./activity_projection.mjs";
 import { appendText, nowIso, writeText } from "./common.mjs";
 import { getEngineDisplayName } from "./engine_metadata.mjs";
 import {
@@ -53,14 +54,16 @@ export function buildHostLeaseStoppedResult(reason) {
   };
 }
 
-export function createRuntimeStatusWriter(runtimeStatusFile, baseState) {
+export function createRuntimeStatusWriter(runtimeStatusFile, baseState, onUpdate) {
   return function writeRuntimeStatus(status, extra = {}) {
-    writeJson(runtimeStatusFile, {
+    const payload = {
       ...baseState,
       ...extra,
       status,
       updatedAt: nowIso(),
-    });
+    };
+    writeJson(runtimeStatusFile, payload);
+    onUpdate?.(payload);
   };
 }
 
@@ -167,6 +170,14 @@ export async function runEngineAttempt({
   const attemptLastMessageFile = path.join(runDir, `${attemptPrefix}-last-message.txt`);
   const attemptStdoutFile = path.join(runDir, `${attemptPrefix}-stdout.log`);
   const attemptStderrFile = path.join(runDir, `${attemptPrefix}-stderr.log`);
+  const activityProjector = createActivityProjector({
+    engine,
+    phase: executionMode,
+    repoRoot: context.repoRoot,
+    runDir,
+    outputPrefix: attemptPrefix,
+    attemptPrefix,
+  });
 
   if (invocation.error) {
     const result = {
@@ -183,6 +194,17 @@ export async function runEngineAttempt({
     };
     writeText(attemptPromptFile, prompt);
     writeEngineRunArtifacts(runDir, attemptPrefix, result, "");
+    activityProjector.onRuntimeStatus({
+      status: "failed",
+      attemptPrefix,
+      activityFile: activityProjector.activityFile,
+      activityEventsFile: activityProjector.activityEventsFile,
+    });
+    activityProjector.finalize({
+      status: "failed",
+      result,
+      finalMessage: "",
+    });
     return {
       result,
       finalMessage: "",
@@ -216,7 +238,10 @@ export async function runEngineAttempt({
   const result = await runChild(invocation.command, finalArgs, {
     cwd: context.repoRoot,
     stdin: prompt,
-    env,
+    env: {
+      ...(invocation.env || {}),
+      ...(env || {}),
+    },
     shell: invocation.shell,
     heartbeatIntervalMs: recoveryPolicy.heartbeatIntervalSeconds * 1000,
     stallWarningMs: recoveryPolicy.stallWarningSeconds * 1000,
@@ -228,10 +253,18 @@ export async function runEngineAttempt({
         recoveryCount,
         recoveryHistory,
         heartbeat: payload,
+        activityFile: activityProjector.activityFile,
+        activityEventsFile: activityProjector.activityEventsFile,
+      });
+      activityProjector.onRuntimeStatus({
+        ...payload,
+        attemptPrefix,
+        recoveryCount,
       });
     },
     onStdout(text) {
       appendText(attemptStdoutFile, text);
+      activityProjector.onStdoutChunk(text);
     },
     onStderr(text) {
       appendText(attemptStderrFile, text);
@@ -245,6 +278,10 @@ export async function runEngineAttempt({
 
   writeText(attemptPromptFile, prompt);
   writeEngineRunArtifacts(runDir, attemptPrefix, result, finalMessage);
+  activityProjector.finalize({
+    result,
+    finalMessage,
+  });
 
   return {
     result,

@@ -15,10 +15,12 @@ import { loadPolicy } from "./config.mjs";
 import { createContext } from "./context.mjs";
 import { createDiscoveryPromptSession, resolveDiscoveryFailureInteractively } from "./discovery_prompt.mjs";
 import { resolveEngineSelection } from "./engine_selection.mjs";
+import { shouldPromptForEngineSelection } from "./execution_interactivity.mjs";
 import { resetRepoForRebuild } from "./rebuild.mjs";
 import { renderRebuildSummary } from "./cli_render.mjs";
 import { shouldConfirmRepoRebuild } from "./cli_support.mjs";
 import { launchAndMaybeWatchSupervisedCommand } from "./supervisor_cli_support.mjs";
+import { resolveFullAutoMainlineOptions } from "./auto_execution_options.mjs";
 
 async function resolveAnalyzeEngineSelection(options) {
   if (options.engineResolution?.ok) {
@@ -33,7 +35,7 @@ async function resolveAnalyzeEngineSelection(options) {
     context: provisionalContext,
     policy: loadPolicy(provisionalContext),
     options,
-    interactive: !options.yes,
+    interactive: shouldPromptForEngineSelection(options),
   });
 }
 
@@ -202,7 +204,11 @@ async function prepareAnalyzeExecution(initialOptions) {
 }
 
 async function maybeRunAutoExecution(result, activeOptions) {
-  const execution = analyzeExecution(result.backlog, activeOptions);
+  const autoOptions = resolveFullAutoMainlineOptions({
+    ...activeOptions,
+    engineResolution: result.engineResolution?.ok ? result.engineResolution : activeOptions.engineResolution,
+  });
+  const execution = analyzeExecution(result.backlog, autoOptions);
 
   if (activeOptions.dryRun) {
     console.log("已按 --dry-run 跳过自动执行。");
@@ -222,10 +228,8 @@ async function maybeRunAutoExecution(result, activeOptions) {
   console.log("");
   console.log("开始自动接续执行...");
   const payload = await launchAndMaybeWatchSupervisedCommand(result.context, "run-loop", {
-    ...activeOptions,
-    engineResolution: result.engineResolution?.ok ? result.engineResolution : activeOptions.engineResolution,
+    ...autoOptions,
     maxTasks: resolveAutoRunMaxTasks(result.backlog, activeOptions) || undefined,
-    fullAutoMainline: true,
   });
   return payload.exitCode || 0;
 }

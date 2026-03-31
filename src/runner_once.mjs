@@ -1,5 +1,6 @@
 import { selectNextTask, summarizeBacklog } from "./backlog.mjs";
 import { loadBacklog, writeStateMarkdown, writeStatus } from "./config.mjs";
+import { refreshHostContinuationArtifacts } from "./host_continuation.mjs";
 import { executeSingleTask } from "./runner_execute_task.mjs";
 import { renderStatusMarkdown } from "./runner_status.mjs";
 
@@ -25,6 +26,9 @@ export async function runOnce(context, options = {}) {
     lastResult: result.ok ? "本轮成功" : (result.summary || result.kind),
     nextTask,
   }));
+  refreshHostContinuationArtifacts(context, {
+    sessionId: options.supervisorSessionId || "",
+  });
 
   return result;
 }

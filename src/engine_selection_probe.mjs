@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 import { getEngineDisplayName, getEngineMetadata, listKnownEngines, normalizeEngineName } from "./engine_metadata.mjs";
-import { resolveCliInvocation } from "./shell_invocation.mjs";
+import { resolveCliInvocation, resolveCodexInvocation } from "./shell_invocation.mjs";
 
 function resolveExecutableOverride(policy = {}, engine) {
   const envExecutable = String(process.env[`HELLOLOOP_${String(engine || "").toUpperCase()}_EXECUTABLE`] || "").trim();
@@ -13,11 +13,14 @@ function resolveExecutableOverride(policy = {}, engine) {
 
 function probeEngineAvailability(engine, policy = {}) {
   const meta = getEngineMetadata(engine);
-  const invocation = resolveCliInvocation({
-    commandName: meta.commandName,
-    toolDisplayName: meta.displayName,
-    explicitExecutable: resolveExecutableOverride(policy, engine),
-  });
+  const explicitExecutable = resolveExecutableOverride(policy, engine);
+  const invocation = engine === "codex"
+    ? resolveCodexInvocation({ explicitExecutable })
+    : resolveCliInvocation({
+      commandName: meta.commandName,
+      toolDisplayName: meta.displayName,
+      explicitExecutable,
+    });
 
   if (invocation.error) {
     return {
@@ -30,6 +33,7 @@ function probeEngineAvailability(engine, policy = {}) {
   const result = spawnSync(invocation.command, [...invocation.argsPrefix, "--version"], {
     encoding: "utf8",
     shell: invocation.shell,
+    windowsHide: process.platform === "win32",
   });
   const ok = result.status === 0;
   return {

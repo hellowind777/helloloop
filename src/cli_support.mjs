@@ -19,6 +19,7 @@ function probeCodexVersion() {
   const codexVersion = spawnSync(invocation.command, [...invocation.argsPrefix, "--version"], {
     encoding: "utf8",
     shell: invocation.shell,
+    windowsHide: process.platform === "win32",
   });
   const ok = codexVersion.status === 0;
   return {
@@ -113,6 +114,7 @@ function probeNamedCliVersion(commandName, toolDisplayName) {
   const result = spawnSync(invocation.command, [...invocation.argsPrefix, "--version"], {
     encoding: "utf8",
     shell: invocation.shell,
+    windowsHide: process.platform === "win32",
   });
   const ok = result.status === 0;
   return {

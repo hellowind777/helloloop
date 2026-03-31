@@ -16,6 +16,7 @@ import {
   rememberEngineSelection,
   resolveEngineSelection,
 } from "./engine_selection.mjs";
+import { shouldPromptForEngineSelection } from "./execution_interactivity.mjs";
 import {
   buildAnalysisSummaryText,
   buildCurrentWorkspaceDiscovery,
@@ -36,7 +37,7 @@ async function analyzeResolvedWorkspace(context, discovery, options = {}) {
       context,
       policy,
       options,
-      interactive: !options.yes,
+      interactive: shouldPromptForEngineSelection(options),
     });
   if (!engineResolution.ok) {
     return {

@@ -1,16 +1,21 @@
 import path from "node:path";
 
 import { createContext } from "./context.mjs";
+import { runDashboardCommand } from "./dashboard_command.mjs";
+import { runDashboardTuiCommand } from "./dashboard_tui.mjs";
+import { runDashboardWebCommand } from "./dashboard_web.mjs";
 import { loadBacklog, scaffoldIfMissing } from "./config.mjs";
 import { syncUserSettingsFile } from "./engine_selection_settings.mjs";
+import { readHostContinuationSnapshot, runHostContinuationCommand } from "./host_continuation.mjs";
 import { installPluginBundle, uninstallPluginBundle } from "./install.mjs";
 import { runLoop, runOnce, renderStatusText } from "./runner.mjs";
+import { collectRepoStatusSnapshot } from "./runner_status.mjs";
 import { renderInstallSummary, renderUninstallSummary } from "./cli_render.mjs";
 import {
   launchAndMaybeWatchSupervisedCommand,
   shouldUseSupervisor,
 } from "./supervisor_cli_support.mjs";
-import { watchSupervisorSession } from "./supervisor_watch.mjs";
+import { watchSupervisorSessionWithRecovery } from "./supervisor_watch.mjs";
 
 export function handleInstallCommand(options) {
   const userSettings = syncUserSettingsFile({
@@ -64,14 +69,29 @@ export async function handleDoctorCommand(context, options, runDoctor) {
 }
 
 export async function handleStatusCommand(context, options) {
-  console.log(renderStatusText(context, options));
+  const hostResume = readHostContinuationSnapshot(context, {
+    refresh: true,
+    sessionId: options.sessionId || "",
+  });
+  if (options.json) {
+    console.log(JSON.stringify({
+      ...collectRepoStatusSnapshot(context, options),
+      hostResume,
+    }, null, 2));
+  } else {
+    console.log(renderStatusText(context, {
+      ...options,
+      hostResume,
+    }));
+  }
   if (!options.watch) {
     return 0;
   }
 
-  const result = await watchSupervisorSession(context, {
+  const result = await watchSupervisorSessionWithRecovery(context, {
     sessionId: options.sessionId,
     pollMs: options.watchPollMs,
+    globalConfigFile: options.globalConfigFile,
   });
   if (result.empty) {
     console.log("当前没有正在运行的后台 supervisor。");
@@ -80,10 +100,30 @@ export async function handleStatusCommand(context, options) {
   return result.exitCode || 0;
 }
 
+export async function handleDashboardCommand(options) {
+  if (options.json === true) {
+    return runDashboardCommand(options);
+  }
+  return runDashboardTuiCommand(options);
+}
+
+export async function handleTuiCommand(options) {
+  return runDashboardTuiCommand(options);
+}
+
+export async function handleWebCommand(options) {
+  return runDashboardWebCommand(options);
+}
+
+export async function handleResumeHostCommand(context, options) {
+  return runHostContinuationCommand(context, options);
+}
+
 export async function handleWatchCommand(context, options) {
-  const result = await watchSupervisorSession(context, {
+  const result = await watchSupervisorSessionWithRecovery(context, {
     sessionId: options.sessionId,
     pollMs: options.watchPollMs,
+    globalConfigFile: options.globalConfigFile,
   });
   if (result.empty) {
     console.log("当前没有正在运行的后台 supervisor。");

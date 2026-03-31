@@ -1,5 +1,5 @@
 import { launchSupervisedCommand, renderSupervisorLaunchSummary } from "./supervisor_runtime.mjs";
-import { watchSupervisorSession } from "./supervisor_watch.mjs";
+import { watchSupervisorSessionWithRecovery } from "./supervisor_watch.mjs";
 
 export function shouldUseSupervisor(options = {}) {
   return !options.dryRun
@@ -34,9 +34,10 @@ export async function launchAndMaybeWatchSupervisedCommand(context, command, opt
   }
 
   console.log("- 已进入附着观察模式；按 Ctrl+C 仅退出观察，不会停止后台任务。");
-  const watchResult = await watchSupervisorSession(context, {
+  const watchResult = await watchSupervisorSessionWithRecovery(context, {
     sessionId: session.sessionId,
     pollMs: options.watchPollMs,
+    globalConfigFile: options.globalConfigFile,
   });
   return {
     detached: false,

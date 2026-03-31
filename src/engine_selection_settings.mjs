@@ -3,6 +3,14 @@ import path from "node:path";
 
 import { fileExists, readJson, readText, timestampForFile, writeJson, writeText } from "./common.mjs";
 import { normalizeEngineName } from "./engine_metadata.mjs";
+import {
+  defaultObserverRetrySettings,
+  defaultSupervisorKeepAliveSettings,
+  defaultTerminalConcurrencySettings,
+  normalizeObserverRetrySettings,
+  normalizeSupervisorKeepAliveSettings,
+  normalizeTerminalConcurrencySettings,
+} from "./runtime_settings.mjs";
 
 function defaultEmailNotificationSettings() {
   return {
@@ -24,15 +32,6 @@ function defaultEmailNotificationSettings() {
   };
 }
 
-function defaultTerminalConcurrencySettings() {
-  return {
-    enabled: true,
-    visibleMax: 8,
-    backgroundMax: 8,
-    totalMax: 8,
-  };
-}
-
 function defaultUserSettings() {
   return {
     defaultEngine: "",
@@ -42,6 +41,8 @@ function defaultUserSettings() {
     },
     runtime: {
       terminalConcurrency: defaultTerminalConcurrencySettings(),
+      observerRetry: defaultObserverRetrySettings(),
+      supervisorKeepAlive: defaultSupervisorKeepAliveSettings(),
     },
   };
 }
@@ -64,16 +65,6 @@ function normalizePositiveInteger(value, fallback, minimum = 1) {
     return fallback;
   }
   return numericValue;
-}
-
-function normalizeTerminalConcurrencySettings(settings = {}) {
-  const defaults = defaultTerminalConcurrencySettings();
-  return {
-    enabled: normalizeBoolean(settings?.enabled, defaults.enabled),
-    visibleMax: normalizePositiveInteger(settings?.visibleMax, defaults.visibleMax, 0),
-    backgroundMax: normalizePositiveInteger(settings?.backgroundMax, defaults.backgroundMax, 0),
-    totalMax: normalizePositiveInteger(settings?.totalMax, defaults.totalMax, 0),
-  };
 }
 
 function mergeValueBySchema(schemaValue, baseValue, patchValue) {
@@ -141,6 +132,8 @@ export function syncUserSettingsShape(settings = {}) {
     },
     runtime: {
       terminalConcurrency: normalizeTerminalConcurrencySettings(settings?.runtime?.terminalConcurrency || {}),
+      observerRetry: normalizeObserverRetrySettings(settings?.runtime?.observerRetry || {}),
+      supervisorKeepAlive: normalizeSupervisorKeepAliveSettings(settings?.runtime?.supervisorKeepAlive || {}),
     },
   };
 }

@@ -1,22 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { fileExists, readJson, sleep } from "./common.mjs";
+import {
+  readJsonIfExists,
+  selectLatestActivityFile,
+  selectLatestRuntimeFile,
+} from "./activity_projection.mjs";
+import { fileExists, sleep } from "./common.mjs";
 import { renderHostLeaseLabel } from "./host_lease.mjs";
-
-const FINAL_STATUSES = new Set(["completed", "failed", "stopped"]);
-
-function readJsonIfExists(filePath) {
-  if (!filePath || !fileExists(filePath)) {
-    return null;
-  }
-
-  try {
-    return readJson(filePath);
-  } catch {
-    return null;
-  }
-}
+import { loadRuntimeSettings } from "./runtime_settings_loader.mjs";
+import { hasRetryBudget, pickRetryDelaySeconds } from "./runtime_settings.mjs";
+import { FINAL_SUPERVISOR_STATUSES } from "./supervisor_state.mjs";
 
 function writeLine(stream, message) {
   stream.write(`${message}\n`);
@@ -63,37 +57,6 @@ function formatTaskStatus(status) {
     lines.push(`[HelloLoop watch] 阶段：${status.stage}`);
   }
   return lines.join("\n");
-}
-
-function selectRuntimeFile(runDir) {
-  if (!runDir || !fileExists(runDir)) {
-    return "";
-  }
-
-  const candidates = [];
-  for (const entry of fs.readdirSync(runDir, { withFileTypes: true })) {
-    if (entry.isFile() && entry.name.endsWith("-runtime.json")) {
-      candidates.push(path.join(runDir, entry.name));
-      continue;
-    }
-    if (!entry.isDirectory()) {
-      continue;
-    }
-    const nestedDir = path.join(runDir, entry.name);
-    for (const nestedName of fs.readdirSync(nestedDir)) {
-      if (nestedName.endsWith("-runtime.json")) {
-        candidates.push(path.join(nestedDir, nestedName));
-      }
-    }
-  }
-
-  candidates.sort((left, right) => {
-    const rightTime = fs.statSync(right).mtimeMs;
-    const leftTime = fs.statSync(left).mtimeMs;
-    return rightTime - leftTime;
-  });
-
-  return candidates[0] || "";
 }
 
 function formatRuntimeState(runtime, previousRuntime) {
@@ -159,6 +122,44 @@ function formatRuntimeState(runtime, previousRuntime) {
   ].filter(Boolean).join(" | ");
 
   return `[HelloLoop watch] ${label}${details ? ` | ${details}` : ""}`;
+}
+
+function formatActivityState(activity, previousActivity) {
+  if (!activity?.current?.label && !activity?.todo?.total) {
+    return "";
+  }
+
+  const activeCommandLabel = Array.isArray(activity?.activeCommands) ? activity.activeCommands[0]?.label || "" : "";
+  const signature = [
+    activity.current?.status || "",
+    activity.current?.label || "",
+    activity.todo?.completed || 0,
+    activity.todo?.total || 0,
+    activeCommandLabel,
+  ].join("|");
+  const previousSignature = previousActivity
+    ? [
+      previousActivity.current?.status || "",
+      previousActivity.current?.label || "",
+      previousActivity.todo?.completed || 0,
+      previousActivity.todo?.total || 0,
+      Array.isArray(previousActivity?.activeCommands) ? previousActivity.activeCommands[0]?.label || "" : "",
+    ].join("|")
+    : "";
+
+  if (signature === previousSignature) {
+    return "";
+  }
+
+  const details = [];
+  if (activity.todo?.total) {
+    details.push(`todo=${activity.todo.completed}/${activity.todo.total}`);
+  }
+  if (activeCommandLabel) {
+    details.push(`cmd=${activeCommandLabel}`);
+  }
+
+  return `[HelloLoop watch] 当前动作：${activity.current?.label || "等待事件"}${details.length ? ` | ${details.join(" | ")}` : ""}`;
 }
 
 function readTextDelta(filePath, offset) {
@@ -244,6 +245,7 @@ export async function watchSupervisorSession(context, options = {}) {
   let lastSupervisorSignature = "";
   let lastTaskSignature = "";
   let previousRuntime = null;
+  let previousActivity = null;
   let missingPolls = 0;
 
   while (true) {
@@ -251,8 +253,12 @@ export async function watchSupervisorSession(context, options = {}) {
     const result = readJsonIfExists(context.supervisorResultFile);
     const activeSessionId = expectedSessionId || supervisor?.sessionId || result?.sessionId || "";
     const taskStatus = resolveStatusForSession(readJsonIfExists(context.statusFile), activeSessionId);
-    const runtimeFile = taskStatus?.runDir ? selectRuntimeFile(taskStatus.runDir) : "";
+    const runtimeFile = taskStatus?.runDir ? selectLatestRuntimeFile(taskStatus.runDir) : "";
     const runtime = readJsonIfExists(runtimeFile);
+    const activityFile = runtime?.activityFile && fileExists(runtime.activityFile)
+      ? runtime.activityFile
+      : (taskStatus?.runDir ? selectLatestActivityFile(taskStatus.runDir, runtime?.attemptPrefix || "") : "");
+    const activity = readJsonIfExists(activityFile);
 
     if (!supervisor && !result) {
       missingPolls += 1;
@@ -296,6 +302,11 @@ export async function watchSupervisorSession(context, options = {}) {
       writeLine(stdoutStream, runtimeMessage);
     }
     previousRuntime = runtime || previousRuntime;
+    const activityMessage = formatActivityState(activity, previousActivity);
+    if (activityMessage) {
+      writeLine(stdoutStream, activityMessage);
+    }
+    previousActivity = activity || previousActivity;
 
     const activePrefix = runtime?.attemptPrefix || "";
     const runtimeDir = runtimeFile ? path.dirname(runtimeFile) : "";
@@ -309,12 +320,45 @@ export async function watchSupervisorSession(context, options = {}) {
     readAndWriteDelta(stdoutCursor, stdoutFile, stdoutStream);
     readAndWriteDelta(stderrCursor, stderrFile, stderrStream);
 
-    if (supervisor?.status && FINAL_STATUSES.has(String(supervisor.status))) {
+    if (supervisor?.status && FINAL_SUPERVISOR_STATUSES.has(String(supervisor.status))) {
       readAndWriteDelta(stdoutCursor, stdoutFile, stdoutStream);
       readAndWriteDelta(stderrCursor, stderrFile, stderrStream);
       return buildWatchResult(supervisor, result);
     }
 
     await sleep(pollMs);
+  }
+}
+
+function formatRetryAttachMessage(options, attemptNumber, delaySeconds) {
+  const sessionLabel = String(options.sessionId || "").trim();
+  const targetLabel = sessionLabel
+    ? `后台会话 ${sessionLabel}`
+    : "后台会话";
+  return `[HelloLoop watch] 暂未检测到可附着的${targetLabel}，将在 ${delaySeconds} 秒后自动重试（第 ${attemptNumber} 次）。`;
+}
+
+export async function watchSupervisorSessionWithRecovery(context, options = {}) {
+  const observerRetry = loadRuntimeSettings({
+    globalConfigFile: options.globalConfigFile,
+  }).observerRetry;
+  const stdoutStream = options.stdoutStream || process.stdout;
+  let retryCount = 0;
+
+  while (true) {
+    const result = await watchSupervisorSession(context, options);
+    if (!result.empty) {
+      return result;
+    }
+
+    const nextAttempt = retryCount + 1;
+    if (!observerRetry.enabled || !hasRetryBudget(observerRetry.maxRetryCount, nextAttempt)) {
+      return result;
+    }
+
+    const delaySeconds = pickRetryDelaySeconds(observerRetry.retryDelaysSeconds, nextAttempt);
+    writeLine(stdoutStream, formatRetryAttachMessage(options, nextAttempt, delaySeconds));
+    retryCount = nextAttempt;
+    await sleep(delaySeconds * 1000);
   }
 }

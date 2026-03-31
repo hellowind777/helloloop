@@ -273,6 +273,30 @@ export async function resolveEngineSelection({
     };
   }
 
+  const recommendedEngine = recommendEngine({
+    hostContext,
+    availableEngines,
+    projectConfig,
+    userSettings,
+  });
+  if (!interactive && recommendedEngine) {
+    return buildResolution({
+      engine: recommendedEngine,
+      source: "remembered_default",
+      basis: [
+        buildRecommendationBasis({
+          hostContext,
+          projectConfig,
+          userSettings,
+          recommendedEngine,
+        }) || `继续沿用已确认过的默认执行引擎：${getEngineDisplayName(recommendedEngine)}。`,
+        "当前为无人值守续跑场景，HelloLoop 直接复用之前确认过的可用引擎。",
+      ],
+      hostContext,
+      probes,
+    });
+  }
+
   if (!interactive) {
     return {
       ok: false,

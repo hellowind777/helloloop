@@ -11,6 +11,7 @@ export const runtimeBundleEntries = [
   "README.md",
   "bin",
   "hosts",
+  "native",
   "package.json",
   "scripts",
   "skills",
@@ -44,6 +45,14 @@ export function assertPathInside(parentDir, targetDir, label) {
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error(`${label} 超出允许范围：${targetDir}`);
   }
+}
+
+export function isSamePath(leftPath, rightPath) {
+  if (!leftPath || !rightPath) {
+    return false;
+  }
+  const normalize = (value) => path.resolve(value).replace(/[\\\/]+$/u, "").toLowerCase();
+  return normalize(leftPath) === normalize(rightPath);
 }
 
 function sleepSync(ms) {

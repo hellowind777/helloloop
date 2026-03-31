@@ -1,5 +1,10 @@
 import path from "node:path";
 
+import {
+  readJsonIfExists,
+  selectLatestActivityFile,
+  selectLatestRuntimeFile,
+} from "./activity_projection.mjs";
 import { fileExists, readJson, sanitizeId, tailText, timestampForFile } from "./common.mjs";
 import { renderTaskSummary, selectNextTask, summarizeBacklog } from "./backlog.mjs";
 import { loadBacklog } from "./config.mjs";
@@ -83,16 +88,42 @@ export function renderStatusMarkdown(context, { summary, currentTask, lastResult
   ].join("\n");
 }
 
-export function renderStatusText(context, options = {}) {
+export function collectRepoStatusSnapshot(context, options = {}) {
   const backlog = loadBacklog(context);
   const summary = summarizeBacklog(backlog);
   const nextTask = selectNextTask(backlog, options);
-  const supervisor = fileExists(context.supervisorStateFile)
-    ? readJson(context.supervisorStateFile)
-    : null;
-  const latestStatus = fileExists(context.statusFile)
-    ? readJson(context.statusFile)
-    : null;
+  const supervisor = fileExists(context.supervisorStateFile) ? readJson(context.supervisorStateFile) : null;
+  const latestStatus = fileExists(context.statusFile) ? readJson(context.statusFile) : null;
+  const runtimeFile = latestStatus?.runDir ? selectLatestRuntimeFile(latestStatus.runDir) : "";
+  const runtime = readJsonIfExists(runtimeFile);
+  const activityFile = runtime?.activityFile && fileExists(runtime.activityFile)
+    ? runtime.activityFile
+    : (latestStatus?.runDir ? selectLatestActivityFile(latestStatus.runDir, runtime?.attemptPrefix || "") : "");
+  const activity = readJsonIfExists(activityFile);
+
+  return {
+    summary,
+    nextTask,
+    supervisor,
+    latestStatus,
+    runtimeFile,
+    runtime,
+    activityFile,
+    activity,
+  };
+}
+
+export function renderStatusText(context, options = {}) {
+  const snapshot = collectRepoStatusSnapshot(context, options);
+  const {
+    summary,
+    nextTask,
+    supervisor,
+    latestStatus,
+    runtime,
+    activity,
+  } = snapshot;
+  const hostResume = options.hostResume || null;
 
   return [
     "HelloLoop 状态",
@@ -109,6 +140,9 @@ export function renderStatusText(context, options = {}) {
         `后台会话：${supervisor.status}`,
         `后台会话 ID：${supervisor.sessionId || "unknown"}`,
         `后台租约：${renderHostLeaseLabel(supervisor.lease)}`,
+        ...(Number.isFinite(Number(supervisor.guardianRestartCount)) && Number(supervisor.guardianRestartCount) > 0
+          ? [`守护重拉起次数：${supervisor.guardianRestartCount}`]
+          : []),
       ]
       : []),
     ...(latestStatus?.taskTitle
@@ -118,10 +152,32 @@ export function renderStatusText(context, options = {}) {
         `当前运行阶段：${latestStatus.stage || "unknown"}`,
       ]
       : []),
+    ...(runtime?.status
+      ? [
+        `当前引擎状态：${runtime.status}`,
+        ...(Number.isFinite(Number(runtime.recoveryCount))
+          ? [`自动恢复次数：${runtime.recoveryCount}`]
+          : []),
+      ]
+      : []),
+    ...(activity?.current?.label
+      ? [`当前动作：${activity.current.label}`]
+      : []),
+    ...(activity?.todo?.total
+      ? [`当前待办：${activity.todo.completed}/${activity.todo.total}`]
+      : []),
+    ...(Array.isArray(activity?.activeCommands) && activity.activeCommands[0]?.label
+      ? [`活动命令：${activity.activeCommands[0].label}`]
+      : []),
+    ...(hostResume?.issue?.label
+      ? [`宿主续跑：${hostResume.issue.label}`]
+      : (hostResume?.supervisorActive ? ["宿主续跑：后台仍在运行，可直接接续观察"] : [])),
     "",
     nextTask ? "下一任务：" : "下一任务：无",
     nextTask ? renderTaskSummary(nextTask) : "",
     "",
+    "聚合看板：helloloop dashboard",
+    "续跑提示：helloloop resume-host",
     "实时观察：helloloop watch",
   ].filter(Boolean).join("\n");
 }
