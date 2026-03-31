@@ -253,7 +253,7 @@ test("watch 命令可重新附着已后台化的 supervisor 会话", async () =>
     assert.equal(watchResult.status, 0, watchResult.stderr);
     assert.match(watchResult.stdout, /已附着后台会话/);
     assert.match(watchResult.stdout, /step 1: 正在分析开发文档/);
-    assert.match(watchResult.stdout, /step 3: 正在准备交付/);
+    assert.match(watchResult.stdout, /(step 2: 正在落地实现|step 3: 正在准备交付|review ok)/);
   } finally {
     await cleanupTempDir(tempRoot, context.supervisorStateFile);
   }

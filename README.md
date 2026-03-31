@@ -535,7 +535,7 @@ git push origin vX.Y.Z-beta.N
 
 - 正式版本使用 npm `latest` 渠道，beta 版本使用 npm `beta` 渠道
 - 如果测试、版本校验或打包检查失败，npm 发布与 GitHub Release 都不会继续执行
-- `0.9.0` 起按破坏性升级思路继续收紧：后台 supervisor + CLI 附着观察成为默认工作流，同时 `settings.json` 与 Codex 安装布局只接受当前版本规范，不再为旧布局做兼容兜底
+- `0.9.1` 起按破坏性升级思路继续收紧：后台 supervisor + CLI 附着观察成为默认工作流，同时 `settings.json` 与 Codex 安装布局只接受当前版本规范，不再为旧布局做兼容兜底
 - GitHub Release 阶段现已改为使用官方 `gh` CLI + `generate-notes` API 创建 / 更新 release，不再依赖会触发 Node runtime deprecation warning 的第三方 action
 
 ## 宿主写入范围
