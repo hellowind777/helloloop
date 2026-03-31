@@ -4,7 +4,7 @@ import { rememberEngineSelection } from "./engine_selection.mjs";
 import { getEngineDisplayName } from "./engine_metadata.mjs";
 import { ensureDir, nowIso, writeText } from "./common.mjs";
 import { isHostLeaseAlive } from "./host_lease.mjs";
-import { saveBacklog } from "./config.mjs";
+import { saveBacklog, writeStatus } from "./config.mjs";
 import { reviewTaskCompletion } from "./completion_review.mjs";
 import { updateTask } from "./backlog.mjs";
 import { buildTaskPrompt } from "./prompt.mjs";
@@ -267,6 +267,16 @@ export async function executeSingleTask(context, options = {}) {
 
   updateTask(execution.backlog, execution.task.id, { status: "in_progress", startedAt: nowIso() });
   saveBacklog(context, execution.backlog);
+  writeStatus(context, {
+    ok: true,
+    sessionId: options.supervisorSessionId || "",
+    stage: "task-started",
+    taskId: execution.task.id,
+    taskTitle: execution.task.title,
+    runDir: execution.runDir,
+    summary: "",
+    message: `开始执行任务：${execution.task.title}`,
+  });
 
   const state = {
     engineResolution: execution.engineResolution,

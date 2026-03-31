@@ -11,6 +11,7 @@ export async function runOnce(context, options = {}) {
 
   writeStatus(context, {
     ok: result.ok,
+    sessionId: options.supervisorSessionId || "",
     stage: result.kind,
     taskId: result.task?.id || null,
     taskTitle: result.task?.title || "",

@@ -7,26 +7,10 @@ import { installPluginBundle, uninstallPluginBundle } from "./install.mjs";
 import { runLoop, runOnce, renderStatusText } from "./runner.mjs";
 import { renderInstallSummary, renderUninstallSummary } from "./cli_render.mjs";
 import {
-  launchSupervisedCommand,
-  renderSupervisorLaunchSummary,
-} from "./supervisor_runtime.mjs";
-
-function shouldUseSupervisor(options = {}) {
-  return !options.dryRun
-    && process.env.HELLOLOOP_SUPERVISOR_ACTIVE !== "1";
-}
-
-async function runSupervised(context, command, options = {}) {
-  const session = launchSupervisedCommand(context, command, options);
-  console.log(renderSupervisorLaunchSummary(session));
-  console.log("- 已切换为后台执行；可稍后运行 `helloloop status` 查看进度。");
-  return {
-    detached: true,
-    exitCode: 0,
-    ok: true,
-    session,
-  };
-}
+  launchAndMaybeWatchSupervisedCommand,
+  shouldUseSupervisor,
+} from "./supervisor_cli_support.mjs";
+import { watchSupervisorSession } from "./supervisor_watch.mjs";
 
 export function handleInstallCommand(options) {
   const userSettings = syncUserSettingsFile({
@@ -79,9 +63,33 @@ export async function handleDoctorCommand(context, options, runDoctor) {
   return 0;
 }
 
-export function handleStatusCommand(context, options) {
+export async function handleStatusCommand(context, options) {
   console.log(renderStatusText(context, options));
-  return 0;
+  if (!options.watch) {
+    return 0;
+  }
+
+  const result = await watchSupervisorSession(context, {
+    sessionId: options.sessionId,
+    pollMs: options.watchPollMs,
+  });
+  if (result.empty) {
+    console.log("当前没有正在运行的后台 supervisor。");
+    return 1;
+  }
+  return result.exitCode || 0;
+}
+
+export async function handleWatchCommand(context, options) {
+  const result = await watchSupervisorSession(context, {
+    sessionId: options.sessionId,
+    pollMs: options.watchPollMs,
+  });
+  if (result.empty) {
+    console.log("当前没有正在运行的后台 supervisor。");
+    return 1;
+  }
+  return result.exitCode || 0;
 }
 
 export async function handleNextCommand(context, options) {
@@ -109,7 +117,7 @@ export async function handleNextCommand(context, options) {
 
 export async function handleRunOnceCommand(context, options) {
   if (shouldUseSupervisor(options)) {
-    const payload = await runSupervised(context, "run-once", options);
+    const payload = await launchAndMaybeWatchSupervisedCommand(context, "run-once", options);
     return payload.exitCode || 0;
   }
 
@@ -133,7 +141,7 @@ export async function handleRunOnceCommand(context, options) {
 
 export async function handleRunLoopCommand(context, options) {
   if (shouldUseSupervisor(options)) {
-    const payload = await runSupervised(context, "run-loop", options);
+    const payload = await launchAndMaybeWatchSupervisedCommand(context, "run-loop", options);
     return payload.exitCode || 0;
   }
 

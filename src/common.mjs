@@ -26,6 +26,11 @@ export function writeText(filePath, content) {
   fs.writeFileSync(filePath, content, "utf8");
 }
 
+export function appendText(filePath, content) {
+  ensureDir(path.dirname(filePath));
+  fs.appendFileSync(filePath, content, "utf8");
+}
+
 export function writeJson(filePath, value) {
   writeText(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
@@ -63,4 +68,10 @@ export function resolveFrom(rootDir, ...segments) {
 
 export function normalizeRelative(rootDir, targetPath) {
   return path.relative(rootDir, targetPath).replaceAll("\\", "/");
+}
+
+export function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, Math.max(0, Number(ms || 0)));
+  });
 }

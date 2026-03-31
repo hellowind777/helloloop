@@ -1,0 +1,320 @@
+import fs from "node:fs";
+import path from "node:path";
+
+import { fileExists, readJson, sleep } from "./common.mjs";
+import { renderHostLeaseLabel } from "./host_lease.mjs";
+
+const FINAL_STATUSES = new Set(["completed", "failed", "stopped"]);
+
+function readJsonIfExists(filePath) {
+  if (!filePath || !fileExists(filePath)) {
+    return null;
+  }
+
+  try {
+    return readJson(filePath);
+  } catch {
+    return null;
+  }
+}
+
+function writeLine(stream, message) {
+  stream.write(`${message}\n`);
+}
+
+function buildSessionSummary(supervisor) {
+  if (!supervisor?.sessionId) {
+    return "";
+  }
+
+  return [
+    `[HelloLoop watch] 已附着后台会话：${supervisor.sessionId}`,
+    `[HelloLoop watch] 宿主租约：${renderHostLeaseLabel(supervisor.lease)}`,
+  ].join("\n");
+}
+
+function formatSupervisorState(supervisor) {
+  if (!supervisor?.status) {
+    return "";
+  }
+
+  const label = {
+    launching: "后台 supervisor 启动中",
+    running: "后台 supervisor 正在运行",
+    completed: "后台 supervisor 已完成",
+    failed: "后台 supervisor 执行失败",
+    stopped: "后台 supervisor 已停止",
+  }[String(supervisor.status)] || `后台 supervisor 状态：${supervisor.status}`;
+
+  const suffix = supervisor.message ? `：${supervisor.message}` : "";
+  return `[HelloLoop watch] ${label}${suffix}`;
+}
+
+function formatTaskStatus(status) {
+  if (!status?.taskTitle) {
+    return "";
+  }
+
+  const lines = [`[HelloLoop watch] 当前任务：${status.taskTitle}`];
+  if (status.runDir) {
+    lines.push(`[HelloLoop watch] 运行目录：${status.runDir}`);
+  }
+  if (status.stage) {
+    lines.push(`[HelloLoop watch] 阶段：${status.stage}`);
+  }
+  return lines.join("\n");
+}
+
+function selectRuntimeFile(runDir) {
+  if (!runDir || !fileExists(runDir)) {
+    return "";
+  }
+
+  const candidates = [];
+  for (const entry of fs.readdirSync(runDir, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith("-runtime.json")) {
+      candidates.push(path.join(runDir, entry.name));
+      continue;
+    }
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const nestedDir = path.join(runDir, entry.name);
+    for (const nestedName of fs.readdirSync(nestedDir)) {
+      if (nestedName.endsWith("-runtime.json")) {
+        candidates.push(path.join(nestedDir, nestedName));
+      }
+    }
+  }
+
+  candidates.sort((left, right) => {
+    const rightTime = fs.statSync(right).mtimeMs;
+    const leftTime = fs.statSync(left).mtimeMs;
+    return rightTime - leftTime;
+  });
+
+  return candidates[0] || "";
+}
+
+function formatRuntimeState(runtime, previousRuntime) {
+  if (!runtime?.status) {
+    return "";
+  }
+
+  const idleSeconds = Number(runtime?.heartbeat?.idleSeconds || 0);
+  const idleBucket = Math.floor(idleSeconds / 30);
+  const previousIdleBucket = Math.floor(Number(previousRuntime?.heartbeat?.idleSeconds || 0) / 30);
+  const signature = [
+    runtime.status,
+    runtime.attemptPrefix || "",
+    runtime.recoveryCount || 0,
+    runtime.failureCode || "",
+    runtime.failureReason || "",
+    runtime.nextRetryAt || "",
+    runtime.notification?.reason || "",
+  ].join("|");
+  const previousSignature = previousRuntime
+    ? [
+      previousRuntime.status,
+      previousRuntime.attemptPrefix || "",
+      previousRuntime.recoveryCount || 0,
+      previousRuntime.failureCode || "",
+      previousRuntime.failureReason || "",
+      previousRuntime.nextRetryAt || "",
+      previousRuntime.notification?.reason || "",
+    ].join("|")
+    : "";
+
+  if (signature === previousSignature && (runtime.status !== "running" || idleBucket === previousIdleBucket || idleBucket === 0)) {
+    return "";
+  }
+
+  if (runtime.status === "running") {
+    if (idleBucket === 0 || idleBucket === previousIdleBucket) {
+      return "";
+    }
+    return `[HelloLoop watch] 仍在执行：${runtime.attemptPrefix || "当前尝试"}，最近输出距今约 ${idleBucket * 30} 秒`;
+  }
+
+  const labels = {
+    recovering: "进入同引擎恢复",
+    suspected_stall: "疑似卡住，继续观察",
+    watchdog_terminating: "触发 watchdog，准备终止当前子进程",
+    watchdog_waiting: "watchdog 等待子进程退出",
+    retry_waiting: "等待自动重试",
+    probe_waiting: "准备执行健康探测",
+    probe_running: "正在执行健康探测",
+    paused_manual: "自动恢复预算已耗尽，任务暂停",
+    lease_terminating: "宿主租约失效，正在停止当前子进程",
+    stopped_host_closed: "宿主窗口已关闭，后台任务停止",
+    completed: "当前任务执行完成",
+    failed: "当前任务执行失败",
+  };
+  const label = labels[String(runtime.status)] || `运行状态更新：${runtime.status}`;
+  const details = [
+    runtime.attemptPrefix ? `attempt=${runtime.attemptPrefix}` : "",
+    Number.isFinite(Number(runtime.recoveryCount)) ? `recovery=${runtime.recoveryCount}` : "",
+    runtime.nextRetryAt ? `next=${runtime.nextRetryAt}` : "",
+    runtime.failureReason || "",
+  ].filter(Boolean).join(" | ");
+
+  return `[HelloLoop watch] ${label}${details ? ` | ${details}` : ""}`;
+}
+
+function readTextDelta(filePath, offset) {
+  if (!filePath || !fileExists(filePath)) {
+    return { nextOffset: 0, text: "" };
+  }
+
+  const stats = fs.statSync(filePath);
+  if (stats.size <= 0) {
+    return { nextOffset: 0, text: "" };
+  }
+
+  const start = Math.max(0, Math.min(Number(offset || 0), stats.size));
+  if (stats.size === start) {
+    return { nextOffset: start, text: "" };
+  }
+
+  const handle = fs.openSync(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(stats.size - start);
+    fs.readSync(handle, buffer, 0, buffer.length, start);
+    return {
+      nextOffset: stats.size,
+      text: buffer.toString("utf8"),
+    };
+  } finally {
+    fs.closeSync(handle);
+  }
+}
+
+function readAndWriteDelta(cursor, filePath, stream) {
+  if (cursor.file !== filePath) {
+    cursor.file = filePath || "";
+    cursor.offset = 0;
+  }
+
+  if (!filePath) {
+    return;
+  }
+
+  const delta = readTextDelta(filePath, cursor.offset);
+  cursor.offset = delta.nextOffset;
+  if (!delta.text) {
+    return;
+  }
+
+  stream.write(delta.text);
+  if (!delta.text.endsWith("\n")) {
+    stream.write("\n");
+  }
+}
+
+function resolveStatusForSession(status, sessionId) {
+  if (!status) {
+    return null;
+  }
+  if (!sessionId || !status.sessionId || status.sessionId === sessionId) {
+    return status;
+  }
+  return null;
+}
+
+function buildWatchResult(supervisor, result) {
+  const exitCode = Number(result?.exitCode ?? supervisor?.exitCode ?? (supervisor?.status === "completed" ? 0 : 1));
+  return {
+    sessionId: result?.sessionId || supervisor?.sessionId || "",
+    status: result?.ok === true
+      ? "completed"
+      : (supervisor?.status || (exitCode === 0 ? "completed" : "failed")),
+    ok: result?.ok === true || exitCode === 0,
+    exitCode,
+  };
+}
+
+export async function watchSupervisorSession(context, options = {}) {
+  const pollMs = Math.max(200, Number(options.pollMs || 1000));
+  const stdoutStream = options.stdoutStream || process.stdout;
+  const stderrStream = options.stderrStream || process.stderr;
+  const expectedSessionId = String(options.sessionId || "").trim();
+  const stdoutCursor = { file: "", offset: 0 };
+  const stderrCursor = { file: "", offset: 0 };
+  let printedSessionId = "";
+  let lastSupervisorSignature = "";
+  let lastTaskSignature = "";
+  let previousRuntime = null;
+  let missingPolls = 0;
+
+  while (true) {
+    const supervisor = readJsonIfExists(context.supervisorStateFile);
+    const result = readJsonIfExists(context.supervisorResultFile);
+    const activeSessionId = expectedSessionId || supervisor?.sessionId || result?.sessionId || "";
+    const taskStatus = resolveStatusForSession(readJsonIfExists(context.statusFile), activeSessionId);
+    const runtimeFile = taskStatus?.runDir ? selectRuntimeFile(taskStatus.runDir) : "";
+    const runtime = readJsonIfExists(runtimeFile);
+
+    if (!supervisor && !result) {
+      missingPolls += 1;
+      if (missingPolls >= 3) {
+        return {
+          sessionId: activeSessionId,
+          status: "",
+          ok: false,
+          exitCode: 1,
+          empty: true,
+        };
+      }
+      await sleep(pollMs);
+      continue;
+    }
+    missingPolls = 0;
+
+    if (supervisor?.sessionId && supervisor.sessionId !== printedSessionId) {
+      printedSessionId = supervisor.sessionId;
+      writeLine(stdoutStream, buildSessionSummary(supervisor));
+    }
+
+    const supervisorSignature = supervisor
+      ? [supervisor.sessionId || "", supervisor.status || "", supervisor.message || ""].join("|")
+      : "";
+    if (supervisorSignature && supervisorSignature !== lastSupervisorSignature) {
+      lastSupervisorSignature = supervisorSignature;
+      writeLine(stdoutStream, formatSupervisorState(supervisor));
+    }
+
+    const taskSignature = taskStatus
+      ? [taskStatus.sessionId || "", taskStatus.taskId || "", taskStatus.taskTitle || "", taskStatus.runDir || "", taskStatus.stage || ""].join("|")
+      : "";
+    if (taskSignature && taskSignature !== lastTaskSignature) {
+      lastTaskSignature = taskSignature;
+      writeLine(stdoutStream, formatTaskStatus(taskStatus));
+    }
+
+    const runtimeMessage = formatRuntimeState(runtime, previousRuntime);
+    if (runtimeMessage) {
+      writeLine(stdoutStream, runtimeMessage);
+    }
+    previousRuntime = runtime || previousRuntime;
+
+    const activePrefix = runtime?.attemptPrefix || "";
+    const runtimeDir = runtimeFile ? path.dirname(runtimeFile) : "";
+    const stdoutFile = runtimeDir && activePrefix
+      ? path.join(runtimeDir, `${activePrefix}-stdout.log`)
+      : "";
+    const stderrFile = runtimeDir && activePrefix
+      ? path.join(runtimeDir, `${activePrefix}-stderr.log`)
+      : "";
+
+    readAndWriteDelta(stdoutCursor, stdoutFile, stdoutStream);
+    readAndWriteDelta(stderrCursor, stderrFile, stderrStream);
+
+    if (supervisor?.status && FINAL_STATUSES.has(String(supervisor.status))) {
+      readAndWriteDelta(stdoutCursor, stdoutFile, stdoutStream);
+      readAndWriteDelta(stderrCursor, stderrFile, stderrStream);
+      return buildWatchResult(supervisor, result);
+    }
+
+    await sleep(pollMs);
+  }
+}

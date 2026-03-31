@@ -7,6 +7,7 @@ const KNOWN_COMMANDS = new Set([
   "uninstall",
   "init",
   "status",
+  "watch",
   "next",
   "run-once",
   "run-loop",
@@ -51,7 +52,10 @@ export function parseArgs(argv) {
     else if (arg === "--gemini-home") { options.geminiHome = rest[index + 1]; index += 1; }
     else if (arg === "--config-dir") { options.configDirName = rest[index + 1]; index += 1; }
     else if (arg === "--session-file") { options.sessionFile = rest[index + 1]; index += 1; }
-    else if (arg === "--supervised") options.supervised = true;
+    else if (arg === "--watch") options.watch = true;
+    else if (arg === "--detach") options.detach = true;
+    else if (arg === "--session-id") { options.sessionId = rest[index + 1]; index += 1; }
+    else if (arg === "--watch-poll-ms") { options.watchPollMs = Number(rest[index + 1]); index += 1; }
     else if (arg === "--required-doc") { options.requiredDocs.push(rest[index + 1]); index += 1; }
     else if (arg === "--constraint") { options.constraints.push(rest[index + 1]); index += 1; }
     else { options.positionalArgs.push(arg); }
@@ -70,6 +74,7 @@ function helpText() {
     "  uninstall             从所选宿主卸载插件并清理注册信息",
     "  init                  初始化 .helloloop 配置",
     "  status                查看 backlog 与下一任务",
+    "  watch                 附着到后台 supervisor，持续查看实时进度",
     "  next                  生成下一任务干跑预览",
     "  run-once              执行一个任务",
     "  run-loop              连续执行多个任务",
@@ -90,7 +95,9 @@ function helpText() {
     "  --max-tasks <n>       run-loop 最多执行 n 个任务",
     "  --max-attempts <n>    每种策略内最多重试 n 次",
     "  --max-strategies <n>  单任务最多切换 n 种策略继续重试",
-    "  --supervised          兼容保留；当前版本默认就会通过独立 supervisor 后台执行",
+    "  --watch               启动后台 supervisor 后，当前终端继续附着观察实时输出",
+    "  --detach              仅启动后台 supervisor 后立即返回，不进入观察模式",
+    "  --session-id <id>     status/watch 指定附着的后台会话 ID",
     "  --allow-high-risk     允许执行 medium/high/critical 风险任务",
     "  --rebuild-existing    分析判断当前项目与文档冲突时，自动清理当前项目后按文档重建",
     "  --required-doc <p>    增加一个全局必读文档（AGENTS.md 会被自动忽略）",
@@ -100,6 +107,8 @@ function helpText() {
     "  analyze 默认支持在命令后混合传入引擎、路径和自然语言要求。",
     "  如果同时检测到多个可用引擎且没有明确指定，会先询问你选择。",
     "  当前版本默认会把自动执行 / run-once / run-loop 切到后台 supervisor。",
+    "  交互终端默认会自动附着观察；如只想立即返回，请显式加 --detach。",
+    "  任何时候都可运行 `helloloop watch` 或 `helloloop status --watch` 重新附着观察。",
     "  示例：npx helloloop claude <DOCS_PATH> <PROJECT_ROOT> 先分析偏差，不要执行",
   ].join("\n");
 }

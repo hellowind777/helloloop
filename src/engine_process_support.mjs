@@ -121,17 +121,21 @@ export function runChild(command, args, options = {}) {
     emitHeartbeat("running");
 
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      stdout += text;
       stdoutBytes += chunk.length;
       lastOutputAt = Date.now();
       stallWarned = false;
+      options.onStdout?.(text);
       emitHeartbeat("running");
     });
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      stderr += text;
       stderrBytes += chunk.length;
       lastOutputAt = Date.now();
       stallWarned = false;
+      options.onStderr?.(text);
       emitHeartbeat("running");
     });
 

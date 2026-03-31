@@ -46,25 +46,34 @@ function defaultUserSettings() {
   };
 }
 
-function cloneJsonValue(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function syncValueBySchema(schemaValue, currentValue) {
-  if (!isPlainObject(schemaValue)) {
-    return currentValue === undefined ? cloneJsonValue(schemaValue) : currentValue;
-  }
+function normalizeString(value, fallback = "") {
+  return typeof value === "string" ? value.trim() : fallback;
+}
 
-  const source = isPlainObject(currentValue) ? currentValue : {};
-  const next = {};
-  for (const [key, childSchema] of Object.entries(schemaValue)) {
-    next[key] = syncValueBySchema(childSchema, Object.hasOwn(source, key) ? source[key] : undefined);
+function normalizeBoolean(value, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function normalizePositiveInteger(value, fallback, minimum = 1) {
+  const numericValue = Number(value);
+  if (!Number.isInteger(numericValue) || numericValue < minimum) {
+    return fallback;
   }
-  return next;
+  return numericValue;
+}
+
+function normalizeTerminalConcurrencySettings(settings = {}) {
+  const defaults = defaultTerminalConcurrencySettings();
+  return {
+    enabled: normalizeBoolean(settings?.enabled, defaults.enabled),
+    visibleMax: normalizePositiveInteger(settings?.visibleMax, defaults.visibleMax, 0),
+    backgroundMax: normalizePositiveInteger(settings?.backgroundMax, defaults.backgroundMax, 0),
+    totalMax: normalizePositiveInteger(settings?.totalMax, defaults.totalMax, 0),
+  };
 }
 
 function mergeValueBySchema(schemaValue, baseValue, patchValue) {
@@ -87,16 +96,6 @@ function mergeValueBySchema(schemaValue, baseValue, patchValue) {
   return next;
 }
 
-export function syncUserSettingsShape(settings = {}) {
-  return syncValueBySchema(defaultUserSettings(), settings);
-}
-
-function readRawUserSettingsDocument(options = {}) {
-  const settingsFile = resolveUserSettingsFile(options.userSettingsFile);
-  const settings = fileExists(settingsFile) ? readJson(settingsFile) : {};
-  return syncUserSettingsShape(settings);
-}
-
 export function resolveUserSettingsHome() {
   return String(process.env.HELLOLOOP_HOME || "").trim()
     || path.join(os.homedir(), ".helloloop");
@@ -113,30 +112,47 @@ function normalizeEmailNotificationSettings(emailSettings = {}) {
   const smtp = emailSettings?.smtp || {};
 
   return {
-    ...defaults,
-    ...emailSettings,
+    enabled: normalizeBoolean(emailSettings?.enabled, defaults.enabled),
     to: Array.isArray(emailSettings?.to)
       ? emailSettings.to.map((item) => String(item || "").trim()).filter(Boolean)
-      : (typeof emailSettings?.to === "string" && emailSettings.to.trim() ? [emailSettings.to.trim()] : []),
+      : defaults.to,
+    from: normalizeString(emailSettings?.from, defaults.from),
     smtp: {
-      ...defaults.smtp,
-      ...smtp,
+      host: normalizeString(smtp?.host, defaults.smtp.host),
+      port: normalizePositiveInteger(smtp?.port, defaults.smtp.port),
+      secure: normalizeBoolean(smtp?.secure, defaults.smtp.secure),
+      starttls: normalizeBoolean(smtp?.starttls, defaults.smtp.starttls),
+      username: normalizeString(smtp?.username, defaults.smtp.username),
+      usernameEnv: normalizeString(smtp?.usernameEnv, defaults.smtp.usernameEnv),
+      password: typeof smtp?.password === "string" ? smtp.password : defaults.smtp.password,
+      passwordEnv: normalizeString(smtp?.passwordEnv, defaults.smtp.passwordEnv),
+      timeoutSeconds: normalizePositiveInteger(smtp?.timeoutSeconds, defaults.smtp.timeoutSeconds),
+      rejectUnauthorized: normalizeBoolean(smtp?.rejectUnauthorized, defaults.smtp.rejectUnauthorized),
     },
   };
 }
 
-export function loadUserSettingsDocument(options = {}) {
-  const settings = readRawUserSettingsDocument(options);
-
+export function syncUserSettingsShape(settings = {}) {
   return {
-    ...settings,
-    defaultEngine: normalizeEngineName(settings?.defaultEngine),
-    lastSelectedEngine: normalizeEngineName(settings?.lastSelectedEngine),
+    defaultEngine: normalizeEngineName(settings?.defaultEngine) || "",
+    lastSelectedEngine: normalizeEngineName(settings?.lastSelectedEngine) || "",
     notifications: {
-      ...(settings?.notifications || {}),
       email: normalizeEmailNotificationSettings(settings?.notifications?.email || {}),
     },
+    runtime: {
+      terminalConcurrency: normalizeTerminalConcurrencySettings(settings?.runtime?.terminalConcurrency || {}),
+    },
   };
+}
+
+function readRawUserSettingsDocument(options = {}) {
+  const settingsFile = resolveUserSettingsFile(options.userSettingsFile);
+  const settings = fileExists(settingsFile) ? readJson(settingsFile) : {};
+  return syncUserSettingsShape(settings);
+}
+
+export function loadUserSettingsDocument(options = {}) {
+  return readRawUserSettingsDocument(options);
 }
 
 export function loadUserSettings(options = {}) {

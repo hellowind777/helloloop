@@ -123,8 +123,14 @@ test("run-once 执行阶段遇到 429 限流时会按无人值守策略同引擎
     assert.match(result.stdout, /已切换为后台执行/);
     assert.doesNotMatch(result.stdout, /是否切换到其他可用引擎继续/);
 
-    await waitForTaskStatus(tempRepo, "done");
-    await waitForSupervisorCompletion(tempRepo);
+    await waitForTaskStatus(tempRepo, "done", 0, ".helloloop", {
+      timeoutMs: 40000,
+      intervalMs: 100,
+    });
+    await waitForSupervisorCompletion(tempRepo, ".helloloop", {
+      timeoutMs: 40000,
+      intervalMs: 100,
+    });
     const codexState = readJson(codexStateFile);
     const backlog = readJson(path.join(tempRepo, ".helloloop", "backlog.json"));
     assert.equal(codexState.analyze, 1);

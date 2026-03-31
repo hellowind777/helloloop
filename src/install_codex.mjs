@@ -133,7 +133,6 @@ export function installCodexHost(bundleRoot, options = {}) {
   const resolvedLocalRoot = resolveCodexLocalRoot(options.codexHome);
   const targetPluginsRoot = path.join(resolvedLocalRoot, "plugins");
   const targetPluginRoot = path.join(targetPluginsRoot, CODEX_PLUGIN_NAME);
-  const legacyTargetPluginRoot = path.join(resolvedCodexHome, "plugins", CODEX_PLUGIN_NAME);
   const targetPluginCacheRoot = path.join(
     resolvedCodexHome,
     "plugins",
@@ -143,13 +142,9 @@ export function installCodexHost(bundleRoot, options = {}) {
   );
   const targetInstalledPluginRoot = path.join(targetPluginCacheRoot, "local");
   const marketplaceFile = path.join(resolvedLocalRoot, ".agents", "plugins", "marketplace.json");
-  const legacyMarketplaceFile = path.join(resolvedCodexHome, ".agents", "plugins", "marketplace.json");
   const configFile = path.join(resolvedCodexHome, "config.toml");
   const manifestFile = path.join(bundleRoot, ".codex-plugin", "plugin.json");
   const existingMarketplace = readExistingJsonOrThrow(marketplaceFile, "Codex marketplace 配置");
-  const existingLegacyMarketplace = legacyMarketplaceFile === marketplaceFile
-    ? existingMarketplace
-    : readExistingJsonOrThrow(legacyMarketplaceFile, "Codex legacy marketplace 配置");
 
   if (!fileExists(manifestFile)) {
     throw new Error(`未找到 Codex 插件 manifest：${manifestFile}`);
@@ -159,9 +154,6 @@ export function installCodexHost(bundleRoot, options = {}) {
   assertPathInside(resolvedCodexHome, targetPluginCacheRoot, "Codex 插件缓存目录");
   removeTargetIfNeeded(targetPluginRoot, options.force);
   removeTargetIfNeeded(targetPluginCacheRoot, options.force);
-  if (legacyTargetPluginRoot !== targetPluginRoot) {
-    removePathIfExists(legacyTargetPluginRoot);
-  }
 
   ensureDir(targetPluginsRoot);
   ensureDir(targetPluginRoot);
@@ -173,9 +165,6 @@ export function installCodexHost(bundleRoot, options = {}) {
 
   ensureDir(path.dirname(marketplaceFile));
   updateCodexMarketplace(marketplaceFile, existingMarketplace);
-  if (legacyMarketplaceFile !== marketplaceFile) {
-    removeCodexMarketplaceEntry(legacyMarketplaceFile, existingLegacyMarketplace);
-  }
   upsertCodexPluginConfig(configFile);
 
   return {
@@ -192,7 +181,6 @@ export function uninstallCodexHost(options = {}) {
   const resolvedCodexHome = resolveHomeDir(options.codexHome, ".codex");
   const resolvedLocalRoot = resolveCodexLocalRoot(options.codexHome);
   const targetPluginRoot = path.join(resolvedLocalRoot, "plugins", CODEX_PLUGIN_NAME);
-  const legacyTargetPluginRoot = path.join(resolvedCodexHome, "plugins", CODEX_PLUGIN_NAME);
   const targetPluginCacheRoot = path.join(
     resolvedCodexHome,
     "plugins",
@@ -201,29 +189,19 @@ export function uninstallCodexHost(options = {}) {
     CODEX_PLUGIN_NAME,
   );
   const marketplaceFile = path.join(resolvedLocalRoot, ".agents", "plugins", "marketplace.json");
-  const legacyMarketplaceFile = path.join(resolvedCodexHome, ".agents", "plugins", "marketplace.json");
   const configFile = path.join(resolvedCodexHome, "config.toml");
   const existingMarketplace = readExistingJsonOrThrow(marketplaceFile, "Codex marketplace 配置");
-  const existingLegacyMarketplace = legacyMarketplaceFile === marketplaceFile
-    ? existingMarketplace
-    : readExistingJsonOrThrow(legacyMarketplaceFile, "Codex legacy marketplace 配置");
 
   const removedPlugin = removePathIfExists(targetPluginRoot);
-  const removedLegacyPlugin = legacyTargetPluginRoot === targetPluginRoot
-    ? false
-    : removePathIfExists(legacyTargetPluginRoot);
   const removedCache = removePathIfExists(targetPluginCacheRoot);
   const removedMarketplace = removeCodexMarketplaceEntry(marketplaceFile, existingMarketplace);
-  const removedLegacyMarketplace = legacyMarketplaceFile === marketplaceFile
-    ? false
-    : removeCodexMarketplaceEntry(legacyMarketplaceFile, existingLegacyMarketplace);
   const removedConfig = removeCodexPluginConfig(configFile);
 
   return {
     host: "codex",
     displayName: "Codex",
     targetRoot: targetPluginRoot,
-    removed: removedPlugin || removedLegacyPlugin || removedCache || removedMarketplace || removedLegacyMarketplace || removedConfig,
+    removed: removedPlugin || removedCache || removedMarketplace || removedConfig,
     marketplaceFile,
     configFile,
   };

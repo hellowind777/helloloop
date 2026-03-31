@@ -10,6 +10,7 @@ import {
   handleRunOnceCommand,
   handleStatusCommand,
   handleUninstallCommand,
+  handleWatchCommand,
 } from "./cli_command_handlers.mjs";
 import { resolveContextFromOptions, resolveStandardCommandOptions } from "./cli_context.mjs";
 import { runDoctor } from "./cli_support.mjs";
@@ -66,6 +67,7 @@ export async function runCli(argv) {
       "run-loop": () => handleRunLoopCommand(context, options),
       "run-once": () => handleRunOnceCommand(context, options),
       status: () => handleStatusCommand(context, options),
+      watch: () => handleWatchCommand(context, options),
     };
     if (!handlers[command]) {
       throw new Error(`未知命令：${command}`);

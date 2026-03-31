@@ -96,7 +96,10 @@ export function launchSupervisedCommand(context, command, options = {}) {
       repoRoot: context.repoRoot,
       configDirName: context.configDirName,
     },
-    options: toSerializableOptions(options),
+    options: toSerializableOptions({
+      ...options,
+      supervisorSessionId: sessionId,
+    }),
     lease,
     terminalSessionFile: terminalSession?.file || "",
   };

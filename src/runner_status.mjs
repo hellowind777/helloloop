@@ -90,6 +90,9 @@ export function renderStatusText(context, options = {}) {
   const supervisor = fileExists(context.supervisorStateFile)
     ? readJson(context.supervisorStateFile)
     : null;
+  const latestStatus = fileExists(context.statusFile)
+    ? readJson(context.statusFile)
+    : null;
 
   return [
     "HelloLoop 状态",
@@ -108,8 +111,17 @@ export function renderStatusText(context, options = {}) {
         `后台租约：${renderHostLeaseLabel(supervisor.lease)}`,
       ]
       : []),
+    ...(latestStatus?.taskTitle
+      ? [
+        `当前运行任务：${latestStatus.taskTitle}`,
+        `当前运行目录：${latestStatus.runDir || "unknown"}`,
+        `当前运行阶段：${latestStatus.stage || "unknown"}`,
+      ]
+      : []),
     "",
     nextTask ? "下一任务：" : "下一任务：无",
     nextTask ? renderTaskSummary(nextTask) : "",
+    "",
+    "实时观察：helloloop watch",
   ].filter(Boolean).join("\n");
 }

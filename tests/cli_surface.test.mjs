@@ -45,6 +45,7 @@ test("官方插件入口 help 不再暴露 install-hooks 或 Hook 模式", () =>
   assert.match(result.stdout, /install/);
   assert.match(result.stdout, /run-loop/);
   assert.match(result.stdout, /doctor/);
+  assert.match(result.stdout, /watch/);
   assert.doesNotMatch(result.stdout, /install-hooks/);
   assert.doesNotMatch(result.stdout, /Hook 模式/);
 });

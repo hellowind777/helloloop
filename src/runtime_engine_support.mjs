@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { nowIso, writeText } from "./common.mjs";
+import { appendText, nowIso, writeText } from "./common.mjs";
 import { getEngineDisplayName } from "./engine_metadata.mjs";
 import {
   buildClaudeArgs,
@@ -165,6 +165,8 @@ export async function runEngineAttempt({
 }) {
   const attemptPromptFile = path.join(runDir, `${attemptPrefix}-prompt.md`);
   const attemptLastMessageFile = path.join(runDir, `${attemptPrefix}-last-message.txt`);
+  const attemptStdoutFile = path.join(runDir, `${attemptPrefix}-stdout.log`);
+  const attemptStderrFile = path.join(runDir, `${attemptPrefix}-stderr.log`);
 
   if (invocation.error) {
     const result = {
@@ -208,6 +210,8 @@ export async function runEngineAttempt({
     recoveryCount,
     recoveryHistory,
   });
+  writeText(attemptStdoutFile, "");
+  writeText(attemptStderrFile, "");
 
   const result = await runChild(invocation.command, finalArgs, {
     cwd: context.repoRoot,
@@ -225,6 +229,12 @@ export async function runEngineAttempt({
         recoveryHistory,
         heartbeat: payload,
       });
+    },
+    onStdout(text) {
+      appendText(attemptStdoutFile, text);
+    },
+    onStderr(text) {
+      appendText(attemptStderrFile, text);
     },
     shouldKeepRunning() {
       return isHostLeaseAlive(hostLease);

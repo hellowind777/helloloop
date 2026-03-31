@@ -102,6 +102,7 @@ npx helloloop gemini <PATH> 接续完成剩余开发
 从当前版本开始，`HelloLoop` 的自动执行主线统一走 **detached supervisor + host lease** 模式：
 
 - `analyze` 确认后的自动执行、`run-once`、`run-loop` 都默认切到后台 supervisor
+- 交互终端里默认会**自动附着观察**这个后台 supervisor：你仍然能在当前 CLI 里看到实时进度与流式输出
 - 当前对话 turn 就算被误按 `Esc`、被宿主暂停、或当前工具调用被中断，后台 supervisor 仍会继续
 - 原有的 15 分钟级恢复、健康探测、同引擎自动恢复，也会继续由这个后台 supervisor 接管
 - 这不是“当前进程死掉后每 15 分钟重新拉起一遍主进程”，而是 supervisor 本身持续存活，所以恢复链不会因为当前 turn 消失而断掉
@@ -109,9 +110,11 @@ npx helloloop gemini <PATH> 接续完成剩余开发
 
 常见场景：
 
-- 在 `Codex` / `Claude` / `Gemini` 宿主里运行 `helloloop`：确认后默认转入后台执行，可用 `helloloop status` 查看进度
-- 在普通终端里运行 `npx helloloop`、`npx helloloop run-once`、`npx helloloop run-loop`：默认也会转入后台执行
-- `--supervised` 仍然保留，但现在只是兼容参数，不再是开启后台 supervisor 的前提
+- 在 `Codex` / `Claude` / `Gemini` 宿主里运行 `helloloop`：确认后默认后台执行，并尽量保持当前 CLI 可观察
+- 在普通终端里运行 `npx helloloop`、`npx helloloop run-once`、`npx helloloop run-loop`：默认也是“后台执行 + 当前终端附着观察”
+- 如果你就是想让命令立刻返回、不占当前终端：显式加 `--detach`
+- 如果你稍后想重新接上实时观察：运行 `helloloop watch` 或 `helloloop status --watch`
+- 因此当前版本**不需要先上 Web 看板** 才能解决“后台执行看不到过程”的问题；CLI 观察链已经是第一优先级
 
 ## 无人值守恢复
 
@@ -374,7 +377,7 @@ npx helloloop install --host all --force
 - `Codex` 会刷新 home 根下的插件源码目录、已安装缓存、`config.toml` 启用项和 marketplace 条目
 - `Claude` 会刷新 marketplace、缓存插件目录，以及 `settings.json` / `known_marketplaces.json` / `installed_plugins.json` 中的 `helloloop` 条目
 - `Gemini` 会刷新 `extensions/helloloop/`，不会动同目录下其他扩展
-- 安装 / 升级 / 重装时，会同步校准 `~/.helloloop/settings.json` 的当前版本结构：补齐缺失项、清理未知项、保留已知项现有值
+- 安装 / 升级 / 重装时，会把 `~/.helloloop/settings.json` 严格收敛到当前版本 schema：补齐缺失项、清理未知项、把非法值重置为当前版本默认值
 - 如果 `~/.helloloop/settings.json` 被确认不是合法 JSON，会先备份原文件，再按当前版本结构重建
 - 如果只是首次读取时出现瞬时异常，但重读后内容合法，则不会误生成备份文件
 - 如果宿主自己的配置 JSON（如 `Codex marketplace.json`、`Claude settings.json`、`known_marketplaces.json`、`installed_plugins.json`）本身已损坏，`HelloLoop` 会先明确报错并停止，不会先清理现有安装再失败
@@ -443,6 +446,7 @@ npx helloloop
 | `doctor` | 检查宿主环境、插件资产与目标仓库状态 |
 | `init` | 手动初始化 `.helloloop/` 模板 |
 | `status` | 查看 backlog 摘要和当前状态 |
+| `watch` | 重新附着后台 supervisor，持续查看实时进度 |
 | `next` | 生成下一任务的干跑预览 |
 | `run-once` | 执行一个任务 |
 | `run-loop` | 连续执行多个任务 |
@@ -456,7 +460,8 @@ npx helloloop
 | `-y` / `--yes` | 跳过执行确认直接开始；但如果未显式指定引擎，会直接报错而不是自动选引擎 |
 | `--repo <dir>` | 高级覆盖：显式指定项目仓库 |
 | `--docs <dir|file>` | 高级覆盖：显式指定开发文档 |
-| `--supervised` | 兼容保留；当前版本默认已启用 detached supervisor |
+| `--watch` | 启动后台 supervisor 后，当前终端继续附着观察实时输出 |
+| `--detach` | 仅启动后台 supervisor，立即返回，不进入观察模式 |
 | `--rebuild-existing` | 项目与文档冲突时，自动清理现有项目后重建 |
 | `--host <name>` | 安装宿主：`codex` / `claude` / `gemini` / `all` |
 | `--config-dir <dir>` | 状态目录名，默认 `.helloloop` |
@@ -465,8 +470,11 @@ npx helloloop
 
 ```bash
 npx helloloop status
+npx helloloop status --watch
+npx helloloop watch
 npx helloloop next
 npx helloloop run-once
+npx helloloop run-loop --detach
 ```
 
 ## Doctor
@@ -527,7 +535,7 @@ git push origin vX.Y.Z-beta.N
 
 - 正式版本使用 npm `latest` 渠道，beta 版本使用 npm `beta` 渠道
 - 如果测试、版本校验或打包检查失败，npm 发布与 GitHub Release 都不会继续执行
-- `0.8.6` 起已统一为全流程后台 supervisor：`analyze` 确认后的自动执行、`run-once`、`run-loop` 默认都后台化，不再要求普通终端显式追加 `--supervised`
+- `0.9.0` 起按破坏性升级思路继续收紧：后台 supervisor + CLI 附着观察成为默认工作流，同时 `settings.json` 与 Codex 安装布局只接受当前版本规范，不再为旧布局做兼容兜底
 - GitHub Release 阶段现已改为使用官方 `gh` CLI + `generate-notes` API 创建 / 更新 release，不再依赖会触发 Node runtime deprecation warning 的第三方 action
 
 ## 宿主写入范围
@@ -567,7 +575,7 @@ git push origin vX.Y.Z-beta.N
 说明：
 
 - 这里不保存项目 backlog、状态、运行记录
-- 安装 / 升级 / 重装时，会对 `settings.json` 做结构校准，但不会校验或篡改你已存在的已知项内容
+- 安装 / 升级 / 重装时，会对 `settings.json` 做严格 schema 校准；已知字段只要值不合法，也会按当前版本默认值重置
 - 只有在 `settings.json` 被确认非法时，才会先备份，再重建为当前版本结构
 - 如果只是读取瞬时异常、重读后合法，不会误生成 `.bak`
 

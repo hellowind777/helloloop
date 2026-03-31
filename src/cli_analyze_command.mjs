@@ -18,10 +18,7 @@ import { resolveEngineSelection } from "./engine_selection.mjs";
 import { resetRepoForRebuild } from "./rebuild.mjs";
 import { renderRebuildSummary } from "./cli_render.mjs";
 import { shouldConfirmRepoRebuild } from "./cli_support.mjs";
-import {
-  launchSupervisedCommand,
-  renderSupervisorLaunchSummary,
-} from "./supervisor_runtime.mjs";
+import { launchAndMaybeWatchSupervisedCommand } from "./supervisor_cli_support.mjs";
 
 async function resolveAnalyzeEngineSelection(options) {
   if (options.engineResolution?.ok) {
@@ -224,16 +221,13 @@ async function maybeRunAutoExecution(result, activeOptions) {
 
   console.log("");
   console.log("开始自动接续执行...");
-  const session = launchSupervisedCommand(result.context, "run-loop", {
+  const payload = await launchAndMaybeWatchSupervisedCommand(result.context, "run-loop", {
     ...activeOptions,
-    supervised: false,
     engineResolution: result.engineResolution?.ok ? result.engineResolution : activeOptions.engineResolution,
     maxTasks: resolveAutoRunMaxTasks(result.backlog, activeOptions) || undefined,
     fullAutoMainline: true,
   });
-  console.log(renderSupervisorLaunchSummary(session));
-  console.log("- 已切换为后台执行；可稍后运行 `helloloop status` 查看进度。");
-  return 0;
+  return payload.exitCode || 0;
 }
 
 export async function handleAnalyzeCommand(options) {
