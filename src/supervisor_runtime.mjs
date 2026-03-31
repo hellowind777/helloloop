@@ -6,6 +6,12 @@ import { createContext } from "./context.mjs";
 import { nowIso, readJson, writeJson, readTextIfExists, timestampForFile } from "./common.mjs";
 import { isHostLeaseAlive, renderHostLeaseLabel, resolveHostLease } from "./host_lease.mjs";
 import { runLoop, runOnce } from "./runner.mjs";
+import {
+  bindBackgroundTerminalSession,
+  cancelPreparedTerminalSessionBackground,
+  finalizePreparedTerminalSessionBackground,
+  prepareCurrentTerminalSessionForBackground,
+} from "./terminal_session_limits.mjs";
 
 const ACTIVE_STATUSES = new Set(["launching", "running"]);
 const FINAL_STATUSES = new Set(["completed", "failed", "stopped"]);
@@ -78,6 +84,11 @@ export function launchSupervisedCommand(context, command, options = {}) {
 
   const sessionId = timestampForFile();
   const lease = resolveHostLease({ hostContext: options.hostContext });
+  const terminalSession = prepareCurrentTerminalSessionForBackground({
+    command,
+    repoRoot: context.repoRoot,
+    sessionId,
+  });
   const request = {
     sessionId,
     command,
@@ -87,6 +98,7 @@ export function launchSupervisedCommand(context, command, options = {}) {
     },
     options: toSerializableOptions(options),
     lease,
+    terminalSessionFile: terminalSession?.file || "",
   };
 
   fs.mkdirSync(context.supervisorRoot, { recursive: true });
@@ -122,6 +134,11 @@ export function launchSupervisedCommand(context, command, options = {}) {
         HELLOLOOP_SUPERVISOR_ACTIVE: "1",
       },
     });
+    finalizePreparedTerminalSessionBackground(child.pid ?? 0, {
+      command,
+      repoRoot: context.repoRoot,
+      sessionId,
+    });
     child.unref();
     writeState(context, {
       sessionId,
@@ -137,6 +154,13 @@ export function launchSupervisedCommand(context, command, options = {}) {
       pid: child.pid ?? 0,
       lease,
     };
+  } catch (error) {
+    cancelPreparedTerminalSessionBackground({
+      command,
+      repoRoot: context.repoRoot,
+      sessionId,
+    });
+    throw error;
   } finally {
     fs.closeSync(stdoutFd);
     fs.closeSync(stderrFd);
@@ -184,6 +208,11 @@ export async function runSupervisedCommandFromSessionFile(sessionFile) {
   const context = createContext(request.context || {});
   const command = String(request.command || "").trim();
   const lease = request.lease || {};
+  bindBackgroundTerminalSession(request.terminalSessionFile || "", {
+    command,
+    repoRoot: context.repoRoot,
+    sessionId: request.sessionId,
+  });
   const commandOptions = {
     ...(request.options || {}),
     hostLease: lease,

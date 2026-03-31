@@ -2,7 +2,6 @@ import path from "node:path";
 
 import { createContext } from "./context.mjs";
 import { loadBacklog, scaffoldIfMissing } from "./config.mjs";
-import { resolveHostContext } from "./engine_selection.mjs";
 import { syncUserSettingsFile } from "./engine_selection_settings.mjs";
 import { installPluginBundle, uninstallPluginBundle } from "./install.mjs";
 import { runLoop, runOnce, renderStatusText } from "./runner.mjs";
@@ -10,32 +9,23 @@ import { renderInstallSummary, renderUninstallSummary } from "./cli_render.mjs";
 import {
   launchSupervisedCommand,
   renderSupervisorLaunchSummary,
-  waitForSupervisedResult,
 } from "./supervisor_runtime.mjs";
 
 function shouldUseSupervisor(options = {}) {
   return !options.dryRun
-    && process.env.HELLOLOOP_SUPERVISOR_ACTIVE !== "1"
-    && (Boolean(options.supervised) || resolveHostContext(options) !== "terminal");
-}
-
-function shouldDetachSupervisor(options = {}) {
-  return resolveHostContext(options) !== "terminal";
+    && process.env.HELLOLOOP_SUPERVISOR_ACTIVE !== "1";
 }
 
 async function runSupervised(context, command, options = {}) {
   const session = launchSupervisedCommand(context, command, options);
   console.log(renderSupervisorLaunchSummary(session));
-  if (shouldDetachSupervisor(options)) {
-    console.log("- 已切换为后台执行；可稍后运行 `helloloop status` 查看进度。");
-    return {
-      detached: true,
-      exitCode: 0,
-      ok: true,
-      session,
-    };
-  }
-  return waitForSupervisedResult(context, session);
+  console.log("- 已切换为后台执行；可稍后运行 `helloloop status` 查看进度。");
+  return {
+    detached: true,
+    exitCode: 0,
+    ok: true,
+    session,
+  };
 }
 
 export function handleInstallCommand(options) {
@@ -120,24 +110,7 @@ export async function handleNextCommand(context, options) {
 export async function handleRunOnceCommand(context, options) {
   if (shouldUseSupervisor(options)) {
     const payload = await runSupervised(context, "run-once", options);
-    if (payload.detached) {
-      return payload.exitCode || 0;
-    }
-    if (!payload.result) {
-      console.error(payload.error || "HelloLoop supervisor 执行失败。");
-      return payload.exitCode || 1;
-    }
-
-    const result = payload.result;
-    if (!result.ok) {
-      console.error(result.summary || "执行失败。");
-      return payload.exitCode || 1;
-    }
-
-    console.log(result.task
-      ? `完成任务：${result.task.title}\n运行目录：${result.runDir}`
-      : "没有可执行任务。");
-    return 0;
+    return payload.exitCode || 0;
   }
 
   const result = await runOnce(context, options);
@@ -161,27 +134,7 @@ export async function handleRunOnceCommand(context, options) {
 export async function handleRunLoopCommand(context, options) {
   if (shouldUseSupervisor(options)) {
     const payload = await runSupervised(context, "run-loop", options);
-    if (payload.detached) {
-      return payload.exitCode || 0;
-    }
-    if (!payload.results) {
-      console.error(payload.error || "HelloLoop supervisor 执行失败。");
-      return payload.exitCode || 1;
-    }
-
-    const failed = payload.results.find((item) => !item.ok);
-    for (const item of payload.results) {
-      if (!item.task) {
-        console.log("没有更多可执行任务。");
-        break;
-      }
-      console.log(`${item.ok ? "成功" : "失败"}：${item.task.title}`);
-    }
-    if (failed) {
-      console.error(failed.summary || "连续执行中断。");
-      return payload.exitCode || 1;
-    }
-    return 0;
+    return payload.exitCode || 0;
   }
 
   const results = await runLoop(context, options);

@@ -9,6 +9,11 @@ import { saveBacklog, saveProjectConfig, scaffoldIfMissing } from "../src/config
 import { createContext } from "../src/context.mjs";
 import { runOnce, renderStatusText } from "../src/runner.mjs";
 import {
+  cleanupTempDir,
+  readJson,
+  waitFor,
+} from "./helpers/supervisor_test_support.mjs";
+import {
   buildCliEnv,
   sampleAnalysisPayload,
   spawnHelloLoop,
@@ -21,10 +26,6 @@ function writeText(filePath, content) {
 
 function writeJson(filePath, value) {
   writeText(filePath, `${JSON.stringify(value, null, 2)}\n`);
-}
-
-function readJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
 function createUnavailableCli(binDir, commandName) {
@@ -203,69 +204,6 @@ function setupTaskRepo(repoDir, context, task) {
   });
 }
 
-async function waitFor(check, timeoutMs = 15000, intervalMs = 100) {
-  const startedAt = Date.now();
-  let lastError = null;
-
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const result = await check();
-      if (result) {
-        return result;
-      }
-    } catch (error) {
-      lastError = error;
-    }
-    await new Promise((resolve) => {
-      setTimeout(resolve, intervalMs);
-    });
-  }
-
-  if (lastError) {
-    throw lastError;
-  }
-  throw new Error(`waitFor timeout after ${timeoutMs}ms`);
-}
-
-function isPidAlive(pid) {
-  const value = Number(pid || 0);
-  if (!Number.isFinite(value) || value <= 0) {
-    return false;
-  }
-  try {
-    process.kill(value, 0);
-    return true;
-  } catch (error) {
-    return String(error?.code || "") === "EPERM";
-  }
-}
-
-async function cleanupTempDir(tempRoot, supervisorStateFile = "") {
-  if (supervisorStateFile && fs.existsSync(supervisorStateFile)) {
-    const state = readJson(supervisorStateFile);
-    if (isPidAlive(state.pid)) {
-      process.kill(state.pid);
-    }
-  }
-
-  let lastError = null;
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    try {
-      fs.rmSync(tempRoot, { recursive: true, force: true });
-      return;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => {
-        setTimeout(resolve, 250);
-      });
-    }
-  }
-
-  if (lastError) {
-    throw lastError;
-  }
-}
-
 test("Codex 宿主内 analyze 自动执行会转入后台 supervisor，status 可见运行中会话", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "helloloop-supervisor-analyze-"));
   const binDir = path.join(tempRoot, "bin");
@@ -407,7 +345,12 @@ test("Codex 宿主内 run-once 默认通过后台 supervisor 执行", async () =
     await waitFor(() => {
       const backlog = readJson(context.backlogFile);
       return backlog.tasks[0]?.status === "done";
-    }, 20000);
+    }, 60000);
+
+    await waitFor(() => {
+      const supervisorState = readJson(context.supervisorStateFile);
+      return supervisorState.status === "completed";
+    }, 60000);
   } finally {
     await cleanupTempDir(tempRoot, context.supervisorStateFile);
   }

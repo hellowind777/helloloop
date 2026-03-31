@@ -99,8 +99,9 @@ npx helloloop gemini <PATH> 接续完成剩余开发
 
 ## 后台监督执行
 
-从 `Codex CLI`、`Claude Code`、`Gemini CLI` 这些宿主里发起 `HelloLoop` 时，确认自动执行后会默认切到 **detached supervisor + host lease** 模式：
+从当前版本开始，`HelloLoop` 的自动执行主线统一走 **detached supervisor + host lease** 模式：
 
+- `analyze` 确认后的自动执行、`run-once`、`run-loop` 都默认切到后台 supervisor
 - 当前对话 turn 就算被误按 `Esc`、被宿主暂停、或当前工具调用被中断，后台 supervisor 仍会继续
 - 原有的 15 分钟级恢复、健康探测、同引擎自动恢复，也会继续由这个后台 supervisor 接管
 - 这不是“当前进程死掉后每 15 分钟重新拉起一遍主进程”，而是 supervisor 本身持续存活，所以恢复链不会因为当前 turn 消失而断掉
@@ -109,7 +110,8 @@ npx helloloop gemini <PATH> 接续完成剩余开发
 常见场景：
 
 - 在 `Codex` / `Claude` / `Gemini` 宿主里运行 `helloloop`：确认后默认转入后台执行，可用 `helloloop status` 查看进度
-- 在普通终端里运行 `npx helloloop run-once --supervised` 或 `npx helloloop run-loop --supervised`：即使中途 `Ctrl+C` 当前命令，只要终端窗口没关，后台 supervisor 仍会继续
+- 在普通终端里运行 `npx helloloop`、`npx helloloop run-once`、`npx helloloop run-loop`：默认也会转入后台执行
+- `--supervised` 仍然保留，但现在只是兼容参数，不再是开启后台 supervisor 的前提
 
 ## 无人值守恢复
 
@@ -174,6 +176,46 @@ npx helloloop gemini <PATH> 接续完成剩余开发
 
 - 建议把 SMTP 密码放在环境变量里，不要明文写进配置文件
 - 邮件只在“本轮不再继续自动重试”时发送，不会每次失败都刷屏
+
+## 终端并发上限
+
+`HelloLoop` 不会主动再额外弹出一堆可见终端窗口；这里的：
+
+- **显示终端** 指当前前台运行中的 `helloloop` 会话
+- **背景终端** 指 detached supervisor 后台会话
+
+默认限制为：
+
+- 显示终端最多 `8`
+- 背景终端最多 `8`
+- 显示 + 背景合计最多 `8`
+
+可在：
+
+```text
+~/.helloloop/settings.json
+```
+
+中自行调整，例如：
+
+```json
+{
+  "runtime": {
+    "terminalConcurrency": {
+      "enabled": true,
+      "visibleMax": 8,
+      "backgroundMax": 8,
+      "totalMax": 8
+    }
+  }
+}
+```
+
+说明：
+
+- 只要合计并发达到 `totalMax`，新前台会话或新的后台 supervisor 都不会再继续启动
+- 如果只是想临时完全关闭这个保护，可把 `enabled` 设为 `false`
+- 这个限制主要用于避免同时占用过多本机终端资源，或因为并发过高触发模型 / API 限速
 
 ## 自动发现与交互逻辑
 
@@ -414,7 +456,7 @@ npx helloloop
 | `-y` / `--yes` | 跳过执行确认直接开始；但如果未显式指定引擎，会直接报错而不是自动选引擎 |
 | `--repo <dir>` | 高级覆盖：显式指定项目仓库 |
 | `--docs <dir|file>` | 高级覆盖：显式指定开发文档 |
-| `--supervised` | 在普通终端里显式启用 detached supervisor；当前命令被打断时，后台执行仍可继续 |
+| `--supervised` | 兼容保留；当前版本默认已启用 detached supervisor |
 | `--rebuild-existing` | 项目与文档冲突时，自动清理现有项目后重建 |
 | `--host <name>` | 安装宿主：`codex` / `claude` / `gemini` / `all` |
 | `--config-dir <dir>` | 状态目录名，默认 `.helloloop` |
@@ -485,7 +527,7 @@ git push origin vX.Y.Z-beta.N
 
 - 正式版本使用 npm `latest` 渠道，beta 版本使用 npm `beta` 渠道
 - 如果测试、版本校验或打包检查失败，npm 发布与 GitHub Release 都不会继续执行
-- `0.8.5` 起已补齐 host-aware supervisor 后台执行链路：宿主内自动执行默认后台化，当前 turn 被 `Esc` / cancel 不再直接打断 HelloLoop 主线
+- `0.8.6` 起已统一为全流程后台 supervisor：`analyze` 确认后的自动执行、`run-once`、`run-loop` 默认都后台化，不再要求普通终端显式追加 `--supervised`
 - GitHub Release 阶段现已改为使用官方 `gh` CLI + `generate-notes` API 创建 / 更新 release，不再依赖会触发 Node runtime deprecation warning 的第三方 action
 
 ## 宿主写入范围

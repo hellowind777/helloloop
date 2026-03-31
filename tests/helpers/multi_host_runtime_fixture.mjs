@@ -3,6 +3,13 @@ import path from "node:path";
 import net from "node:net";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+export {
+  cleanupTempDir,
+  waitFor,
+  waitForBacklogTaskCount,
+  waitForSupervisorCompletion,
+  waitForTaskStatus,
+} from "./supervisor_test_support.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

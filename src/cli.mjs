@@ -14,49 +14,65 @@ import {
 import { resolveContextFromOptions, resolveStandardCommandOptions } from "./cli_context.mjs";
 import { runDoctor } from "./cli_support.mjs";
 import { runSupervisedCommandFromSessionFile } from "./supervisor_runtime.mjs";
+import {
+  acquireVisibleTerminalSession,
+  releaseCurrentTerminalSession,
+  shouldTrackVisibleTerminalCommand,
+} from "./terminal_session_limits.mjs";
 
 export async function runCli(argv) {
-  const parsed = parseArgs(argv);
-  const command = parsed.command;
-  if (command === "help" || command === "--help" || command === "-h") {
-    printHelp();
-    return;
-  }
-  if (command === "__supervise") {
-    if (!parsed.options.sessionFile) {
-      throw new Error("缺少 --session-file，无法启动 HelloLoop supervisor。");
+  try {
+    const parsed = parseArgs(argv);
+    const command = parsed.command;
+    if (command === "help" || command === "--help" || command === "-h") {
+      printHelp();
+      return;
     }
-    await runSupervisedCommandFromSessionFile(parsed.options.sessionFile);
-    return;
-  }
+    if (command === "__supervise") {
+      if (!parsed.options.sessionFile) {
+        throw new Error("缺少 --session-file，无法启动 HelloLoop supervisor。");
+      }
+      await runSupervisedCommandFromSessionFile(parsed.options.sessionFile);
+      return;
+    }
 
-  if (command === "analyze") {
-    process.exitCode = await handleAnalyzeCommand(normalizeAnalyzeOptions(parsed.options, process.cwd()));
-    return;
-  }
+    if (process.env.HELLOLOOP_SUPERVISOR_ACTIVE !== "1" && shouldTrackVisibleTerminalCommand(command)) {
+      acquireVisibleTerminalSession({
+        command,
+        repoRoot: process.cwd(),
+      });
+    }
 
-  const options = resolveStandardCommandOptions(parsed.options);
-  if (command === "install") {
-    process.exitCode = handleInstallCommand(options);
-    return;
-  }
-  if (command === "uninstall") {
-    process.exitCode = handleUninstallCommand(options);
-    return;
-  }
+    if (command === "analyze") {
+      process.exitCode = await handleAnalyzeCommand(normalizeAnalyzeOptions(parsed.options, process.cwd()));
+      return;
+    }
 
-  const context = resolveContextFromOptions(options);
-  const handlers = {
-    doctor: () => handleDoctorCommand(context, options, runDoctor),
-    init: () => handleInitCommand(context),
-    next: () => handleNextCommand(context, options),
-    "run-loop": () => handleRunLoopCommand(context, options),
-    "run-once": () => handleRunOnceCommand(context, options),
-    status: () => handleStatusCommand(context, options),
-  };
-  if (!handlers[command]) {
-    throw new Error(`未知命令：${command}`);
-  }
+    const options = resolveStandardCommandOptions(parsed.options);
+    if (command === "install") {
+      process.exitCode = handleInstallCommand(options);
+      return;
+    }
+    if (command === "uninstall") {
+      process.exitCode = handleUninstallCommand(options);
+      return;
+    }
 
-  process.exitCode = await handlers[command]();
+    const context = resolveContextFromOptions(options);
+    const handlers = {
+      doctor: () => handleDoctorCommand(context, options, runDoctor),
+      init: () => handleInitCommand(context),
+      next: () => handleNextCommand(context, options),
+      "run-loop": () => handleRunLoopCommand(context, options),
+      "run-once": () => handleRunOnceCommand(context, options),
+      status: () => handleStatusCommand(context, options),
+    };
+    if (!handlers[command]) {
+      throw new Error(`未知命令：${command}`);
+    }
+
+    process.exitCode = await handlers[command]();
+  } finally {
+    releaseCurrentTerminalSession();
+  }
 }

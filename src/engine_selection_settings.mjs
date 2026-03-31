@@ -24,12 +24,24 @@ function defaultEmailNotificationSettings() {
   };
 }
 
+function defaultTerminalConcurrencySettings() {
+  return {
+    enabled: true,
+    visibleMax: 8,
+    backgroundMax: 8,
+    totalMax: 8,
+  };
+}
+
 function defaultUserSettings() {
   return {
     defaultEngine: "",
     lastSelectedEngine: "",
     notifications: {
       email: defaultEmailNotificationSettings(),
+    },
+    runtime: {
+      terminalConcurrency: defaultTerminalConcurrencySettings(),
     },
   };
 }
