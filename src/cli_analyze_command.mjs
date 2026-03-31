@@ -15,11 +15,15 @@ import {
 import { loadBacklog, loadPolicy } from "./config.mjs";
 import { createContext } from "./context.mjs";
 import { createDiscoveryPromptSession, resolveDiscoveryFailureInteractively } from "./discovery_prompt.mjs";
-import { resolveEngineSelection } from "./engine_selection.mjs";
+import { resolveEngineSelection, resolveHostContext } from "./engine_selection.mjs";
 import { resetRepoForRebuild } from "./rebuild.mjs";
-import { runLoop } from "./runner.mjs";
 import { renderRebuildSummary } from "./cli_render.mjs";
 import { shouldConfirmRepoRebuild } from "./cli_support.mjs";
+import {
+  launchSupervisedCommand,
+  renderSupervisorLaunchSummary,
+  waitForSupervisedResult,
+} from "./supervisor_runtime.mjs";
 
 async function resolveAnalyzeEngineSelection(options) {
   if (options.engineResolution?.ok) {
@@ -202,6 +206,11 @@ async function prepareAnalyzeExecution(initialOptions) {
   }
 }
 
+function shouldDetachSupervisor(options = {}) {
+  return process.env.HELLOLOOP_SUPERVISOR_ACTIVE !== "1"
+    && resolveHostContext(options) !== "terminal";
+}
+
 async function maybeRunAutoExecution(result, activeOptions) {
   const execution = analyzeExecution(result.backlog, activeOptions);
 
@@ -222,15 +231,27 @@ async function maybeRunAutoExecution(result, activeOptions) {
 
   console.log("");
   console.log("开始自动接续执行...");
-  const results = await runLoop(result.context, {
+  const session = launchSupervisedCommand(result.context, "run-loop", {
     ...activeOptions,
+    supervised: false,
     engineResolution: result.engineResolution?.ok ? result.engineResolution : activeOptions.engineResolution,
     maxTasks: resolveAutoRunMaxTasks(result.backlog, activeOptions) || undefined,
     fullAutoMainline: true,
   });
+  console.log(renderSupervisorLaunchSummary(session));
+  if (shouldDetachSupervisor(activeOptions)) {
+    console.log("- 已切换为后台执行；可稍后运行 `helloloop status` 查看进度。");
+    return 0;
+  }
+  const supervisorPayload = await waitForSupervisedResult(result.context, session);
+  const results = supervisorPayload.results;
+  if (!results) {
+    console.error(supervisorPayload.error || "HelloLoop supervisor 执行失败。");
+    return supervisorPayload.exitCode || 1;
+  }
   const refreshedBacklog = loadBacklog(result.context);
   console.log(renderAutoRunSummary(result.context, refreshedBacklog, results, activeOptions));
-  return results.some((item) => !item.ok) ? 1 : 0;
+  return supervisorPayload.exitCode || 0;
 }
 
 export async function handleAnalyzeCommand(options) {

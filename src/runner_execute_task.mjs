@@ -3,6 +3,7 @@ import path from "node:path";
 import { rememberEngineSelection } from "./engine_selection.mjs";
 import { getEngineDisplayName } from "./engine_metadata.mjs";
 import { ensureDir, nowIso, writeText } from "./common.mjs";
+import { isHostLeaseAlive } from "./host_lease.mjs";
 import { saveBacklog } from "./config.mjs";
 import { reviewTaskCompletion } from "./completion_review.mjs";
 import { updateTask } from "./backlog.mjs";
@@ -13,6 +14,7 @@ import {
   buildBlockedResult,
   buildDoneResult,
   buildFailureResult,
+  buildStoppedResult,
   bumpFailureForNextStrategy,
   recordFailure,
   resolveExecutionSetup,
@@ -25,6 +27,18 @@ import {
 } from "./runner_status.mjs";
 
 async function handleEngineFailure(execution, state, attemptState, engineResult) {
+  if (engineResult.leaseExpired) {
+    return {
+      action: "return",
+      result: buildStoppedResult(
+        execution,
+        "host-lease-stopped",
+        engineResult.leaseReason || "检测到宿主窗口已关闭，当前任务已停止并回退为待处理。",
+        state.failureHistory.length,
+        state.engineResolution,
+      ),
+    };
+  }
   const previousFailure = buildFailureSummary("engine", {
     ...engineResult,
     displayName: getEngineDisplayName(state.engineResolution.engine),
@@ -49,6 +63,18 @@ async function handleEngineFailure(execution, state, attemptState, engineResult)
 }
 
 function handleVerifyFailure(execution, state, attemptState, verifyResult) {
+  if (verifyResult.failed?.leaseExpired) {
+    return {
+      action: "return",
+      result: buildStoppedResult(
+        execution,
+        "host-lease-stopped",
+        verifyResult.failed.leaseReason || "检测到宿主窗口已关闭，验证阶段已停止，当前任务已回退为待处理。",
+        state.failureHistory.length,
+        state.engineResolution,
+      ),
+    };
+  }
   const previousFailure = buildFailureSummary("verify", verifyResult);
   recordFailure(state.failureHistory, attemptState.strategyIndex, attemptState.attemptIndex, "verify", previousFailure);
 
@@ -68,6 +94,18 @@ function handleVerifyFailure(execution, state, attemptState, verifyResult) {
 }
 
 async function handleReviewFailure(execution, state, attemptState, reviewResult) {
+  if (reviewResult.raw?.leaseExpired) {
+    return {
+      action: "return",
+      result: buildStoppedResult(
+        execution,
+        "host-lease-stopped",
+        reviewResult.raw.leaseReason || "检测到宿主窗口已关闭，任务复核已停止，当前任务已回退为待处理。",
+        state.failureHistory.length,
+        state.engineResolution,
+      ),
+    };
+  }
   const previousFailure = reviewResult.summary;
   recordFailure(state.failureHistory, attemptState.strategyIndex, attemptState.attemptIndex, "task_review", previousFailure);
   return {
@@ -107,7 +145,12 @@ function handleIncompleteReview(execution, state, attemptState, reviewResult) {
 }
 
 async function handleVerifyAndReview(execution, state, attemptState, engineResult) {
-  const verifyResult = await runVerifyCommands(execution.context, execution.verifyCommands, attemptState.attemptDir);
+  const verifyResult = await runVerifyCommands(
+    execution.context,
+    execution.verifyCommands,
+    attemptState.attemptDir,
+    { hostLease: execution.hostLease },
+  );
   if (!verifyResult.ok) {
     return handleVerifyFailure(execution, state, attemptState, verifyResult);
   }
@@ -123,6 +166,7 @@ async function handleVerifyAndReview(execution, state, attemptState, engineResul
     verifyResult,
     runDir: attemptState.attemptDir,
     policy: execution.policy,
+    hostLease: execution.hostLease,
   });
   if (!reviewResult.ok) {
     return handleReviewFailure(execution, state, attemptState, reviewResult);
@@ -163,6 +207,7 @@ async function runAttempt(execution, state, attemptState) {
     prompt,
     runDir: attemptState.attemptDir,
     policy: execution.policy,
+    hostLease: execution.hostLease,
   });
   if (!engineResult.ok) {
     return handleEngineFailure(execution, state, attemptState, engineResult);
@@ -174,6 +219,15 @@ export async function executeSingleTask(context, options = {}) {
   const execution = await resolveExecutionSetup(context, options);
   if (execution.idleResult) {
     return execution.idleResult;
+  }
+  if (!isHostLeaseAlive(execution.hostLease)) {
+    return buildStoppedResult(
+      execution,
+      "host-lease-stopped",
+      "检测到宿主窗口已关闭，当前任务未继续执行，并已回退为待处理。",
+      0,
+      execution.engineResolution,
+    );
   }
   if (!execution.engineResolution.ok) {
     return {

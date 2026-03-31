@@ -1,6 +1,7 @@
 const REPO_ROOT_PLACEHOLDER = "<REPO_ROOT>";
 const DOCS_PATH_PLACEHOLDER = "<DOCS_PATH>";
 const KNOWN_COMMANDS = new Set([
+  "__supervise",
   "analyze",
   "install",
   "uninstall",
@@ -49,6 +50,8 @@ export function parseArgs(argv) {
     else if (arg === "--claude-home") { options.claudeHome = rest[index + 1]; index += 1; }
     else if (arg === "--gemini-home") { options.geminiHome = rest[index + 1]; index += 1; }
     else if (arg === "--config-dir") { options.configDirName = rest[index + 1]; index += 1; }
+    else if (arg === "--session-file") { options.sessionFile = rest[index + 1]; index += 1; }
+    else if (arg === "--supervised") options.supervised = true;
     else if (arg === "--required-doc") { options.requiredDocs.push(rest[index + 1]); index += 1; }
     else if (arg === "--constraint") { options.constraints.push(rest[index + 1]); index += 1; }
     else { options.positionalArgs.push(arg); }
@@ -87,6 +90,7 @@ function helpText() {
     "  --max-tasks <n>       run-loop 最多执行 n 个任务",
     "  --max-attempts <n>    每种策略内最多重试 n 次",
     "  --max-strategies <n>  单任务最多切换 n 种策略继续重试",
+    "  --supervised          通过独立 supervisor 执行；当前 turn 被中断时任务仍可继续",
     "  --allow-high-risk     允许执行 medium/high/critical 风险任务",
     "  --rebuild-existing    分析判断当前项目与文档冲突时，自动清理当前项目后按文档重建",
     "  --required-doc <p>    增加一个全局必读文档（AGENTS.md 会被自动忽略）",
@@ -95,6 +99,7 @@ function helpText() {
     "补充说明：",
     "  analyze 默认支持在命令后混合传入引擎、路径和自然语言要求。",
     "  如果同时检测到多个可用引擎且没有明确指定，会先询问你选择。",
+    "  在 Codex / Claude / Gemini 宿主内，确认后的自动执行会默认切到后台 supervisor。",
     "  示例：npx helloloop claude <DOCS_PATH> <PROJECT_ROOT> 先分析偏差，不要执行",
   ].join("\n");
 }

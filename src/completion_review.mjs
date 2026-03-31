@@ -189,6 +189,7 @@ export async function reviewTaskCompletion({
   verifyResult = null,
   runDir,
   policy = {},
+  hostLease = null,
 }) {
   const prompt = buildTaskReviewPrompt({
     task,
@@ -209,6 +210,7 @@ export async function reviewTaskCompletion({
     outputSchemaFile: schemaFile,
     outputPrefix: `${engine}-task-review`,
     skipGitRepoCheck: true,
+    hostLease,
   });
 
   if (!reviewResult.ok) {

@@ -97,6 +97,20 @@ npx helloloop gemini <PATH> 接续完成剩余开发
 - 如果 backlog 清空了，但主线终态复核仍发现文档目标还有缺口，`HelloLoop` 会自动重新分析并继续推进
 - 如果模型只做了一半就想停下来给“下一步建议”，`HelloLoop` 会优先按主线目标继续推进，而不是把半成品当完成
 
+## 后台监督执行
+
+从 `Codex CLI`、`Claude Code`、`Gemini CLI` 这些宿主里发起 `HelloLoop` 时，确认自动执行后会默认切到 **detached supervisor + host lease** 模式：
+
+- 当前对话 turn 就算被误按 `Esc`、被宿主暂停、或当前工具调用被中断，后台 supervisor 仍会继续
+- 原有的 15 分钟级恢复、健康探测、同引擎自动恢复，也会继续由这个后台 supervisor 接管
+- 这不是“当前进程死掉后每 15 分钟重新拉起一遍主进程”，而是 supervisor 本身持续存活，所以恢复链不会因为当前 turn 消失而断掉
+- 真正的停止边界改成 **宿主租约**：只要宿主 CLI 窗口 / 进程还活着，任务就继续；如果宿主窗口真的关闭，HelloLoop 才会停止当前子进程并把任务回退为 `pending`
+
+常见场景：
+
+- 在 `Codex` / `Claude` / `Gemini` 宿主里运行 `helloloop`：确认后默认转入后台执行，可用 `helloloop status` 查看进度
+- 在普通终端里运行 `npx helloloop run-once --supervised` 或 `npx helloloop run-loop --supervised`：即使中途 `Ctrl+C` 当前命令，只要终端窗口没关，后台 supervisor 仍会继续
+
 ## 无人值守恢复
 
 `HelloLoop` 的设计目标不是“跑一轮停一轮”，而是启动前确认一次，启动后持续无人值守推进。
@@ -122,10 +136,10 @@ npx helloloop gemini <PATH> 接续完成剩余开发
 
 但要特别注意：
 
-- 上述自动恢复只在 **当前 `HelloLoop` 主进程仍然存活** 时生效
-- 如果用户手动按 `Esc` / `Ctrl+C`、直接关闭宿主窗口、结束终端进程，或宿主自身把这次会话彻底中止，当前这条自动恢复链也会一起结束
-- 也就是说，这类“人为 / 宿主级取消”不会让 `HelloLoop` 脱离当前会话，在后台继续每 15 分钟自行重试
-- 发生这类中断后，需要你重新执行 `npx helloloop`、`npx helloloop next`，或回到宿主里再次显式调用 `helloloop` 来接续
+- 在 `Codex` / `Claude` / `Gemini` 宿主里，当前 turn 被误按 `Esc`、当前工具调用被取消，或当前会话暂时暂停时，只要宿主窗口本身还活着，后台 supervisor 仍会继续，原有自动恢复节奏也会继续生效
+- 如果真正关闭了宿主 CLI 窗口、终端进程结束，或宿主租约已经失效，HelloLoop 会停止当前子进程，并把未完成任务回退为 `pending`
+- 也就是说：**当前 turn 取消 ≠ 停止 HelloLoop；关闭宿主窗口 = 停止 HelloLoop**
+- 宿主窗口已经关闭后，HelloLoop 不会再脱离宿主自行无限后台驻留；这时需要你重新打开宿主并再次显式调用 `helloloop` 来接续
 
 ## 全局告警配置
 
@@ -400,6 +414,7 @@ npx helloloop
 | `-y` / `--yes` | 跳过执行确认直接开始；但如果未显式指定引擎，会直接报错而不是自动选引擎 |
 | `--repo <dir>` | 高级覆盖：显式指定项目仓库 |
 | `--docs <dir|file>` | 高级覆盖：显式指定开发文档 |
+| `--supervised` | 在普通终端里显式启用 detached supervisor；当前命令被打断时，后台执行仍可继续 |
 | `--rebuild-existing` | 项目与文档冲突时，自动清理现有项目后重建 |
 | `--host <name>` | 安装宿主：`codex` / `claude` / `gemini` / `all` |
 | `--config-dir <dir>` | 状态目录名，默认 `.helloloop` |
@@ -470,7 +485,7 @@ git push origin vX.Y.Z-beta.N
 
 - 正式版本使用 npm `latest` 渠道，beta 版本使用 npm `beta` 渠道
 - 如果测试、版本校验或打包检查失败，npm 发布与 GitHub Release 都不会继续执行
-- `0.8.4` 起已补齐 Codex Structured Outputs 严格 schema 兼容，并修复快退出 CLI 在 CI 中可能触发的 `stdin EPIPE` 问题，避免发布工作流被非业务性故障打断
+- `0.8.5` 起已补齐 host-aware supervisor 后台执行链路：宿主内自动执行默认后台化，当前 turn 被 `Esc` / cancel 不再直接打断 HelloLoop 主线
 - GitHub Release 阶段现已改为使用官方 `gh` CLI + `generate-notes` API 创建 / 更新 release，不再依赖会触发 Node runtime deprecation warning 的第三方 action
 
 ## 宿主写入范围

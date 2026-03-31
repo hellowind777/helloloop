@@ -13,12 +13,20 @@ import {
 } from "./cli_command_handlers.mjs";
 import { resolveContextFromOptions, resolveStandardCommandOptions } from "./cli_context.mjs";
 import { runDoctor } from "./cli_support.mjs";
+import { runSupervisedCommandFromSessionFile } from "./supervisor_runtime.mjs";
 
 export async function runCli(argv) {
   const parsed = parseArgs(argv);
   const command = parsed.command;
   if (command === "help" || command === "--help" || command === "-h") {
     printHelp();
+    return;
+  }
+  if (command === "__supervise") {
+    if (!parsed.options.sessionFile) {
+      throw new Error("缺少 --session-file，无法启动 HelloLoop supervisor。");
+    }
+    await runSupervisedCommandFromSessionFile(parsed.options.sessionFile);
     return;
   }
 

@@ -1,8 +1,9 @@
 import path from "node:path";
 
-import { sanitizeId, tailText, timestampForFile } from "./common.mjs";
+import { fileExists, readJson, sanitizeId, tailText, timestampForFile } from "./common.mjs";
 import { renderTaskSummary, selectNextTask, summarizeBacklog } from "./backlog.mjs";
 import { loadBacklog } from "./config.mjs";
+import { renderHostLeaseLabel } from "./host_lease.mjs";
 
 export function makeRunDir(context, taskId) {
   return path.join(context.runsDir, `${timestampForFile()}-${sanitizeId(taskId)}`);
@@ -86,6 +87,9 @@ export function renderStatusText(context, options = {}) {
   const backlog = loadBacklog(context);
   const summary = summarizeBacklog(backlog);
   const nextTask = selectNextTask(backlog, options);
+  const supervisor = fileExists(context.supervisorStateFile)
+    ? readJson(context.supervisorStateFile)
+    : null;
 
   return [
     "HelloLoop 状态",
@@ -97,6 +101,13 @@ export function renderStatusText(context, options = {}) {
     `进行中：${summary.inProgress}`,
     `失败：${summary.failed}`,
     `阻塞：${summary.blocked}`,
+    ...(supervisor?.status
+      ? [
+        `后台会话：${supervisor.status}`,
+        `后台会话 ID：${supervisor.sessionId || "unknown"}`,
+        `后台租约：${renderHostLeaseLabel(supervisor.lease)}`,
+      ]
+      : []),
     "",
     nextTask ? "下一任务：" : "下一任务：无",
     nextTask ? renderTaskSummary(nextTask) : "",

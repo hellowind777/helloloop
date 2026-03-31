@@ -38,6 +38,27 @@ export function runChild(command, args, options = {}) {
     let watchdogReason = "";
     let stallWarned = false;
     let killTimer = null;
+    let leaseExpired = false;
+    let leaseReason = "";
+
+    const requestLeaseTermination = () => {
+      if (leaseExpired) {
+        return;
+      }
+      leaseExpired = true;
+      leaseReason = String(options.leaseStopReason || "检测到宿主窗口已关闭，HelloLoop 已停止当前子进程。").trim();
+      stderr = [
+        stderr.trim(),
+        `[HelloLoop host-lease] ${leaseReason}`,
+      ].filter(Boolean).join("\n");
+      emitHeartbeat("lease_terminating", {
+        message: leaseReason,
+      });
+      child.kill();
+      killTimer = setTimeout(() => {
+        child.kill("SIGKILL");
+      }, killGraceMs);
+    };
 
     const emitHeartbeat = (status, extra = {}) => {
       options.onHeartbeat?.({
@@ -50,6 +71,8 @@ export function runChild(command, args, options = {}) {
         idleSeconds: Math.max(0, Math.floor((Date.now() - lastOutputAt) / 1000)),
         watchdogTriggered,
         watchdogReason,
+        leaseExpired,
+        leaseReason,
         ...extra,
       });
     };
@@ -61,6 +84,11 @@ export function runChild(command, args, options = {}) {
 
     const heartbeatTimer = heartbeatIntervalMs > 0
       ? setInterval(() => {
+        if (typeof options.shouldKeepRunning === "function" && !options.shouldKeepRunning()) {
+          requestLeaseTermination();
+          return;
+        }
+
         const idleMs = Date.now() - lastOutputAt;
         if (stallWarningMs > 0 && idleMs >= stallWarningMs && !stallWarned) {
           stallWarned = true;
@@ -153,6 +181,8 @@ export function runChild(command, args, options = {}) {
         idleTimeout: watchdogTriggered,
         watchdogTriggered,
         watchdogReason,
+        leaseExpired,
+        leaseReason,
       });
     });
 
@@ -178,6 +208,8 @@ export function runChild(command, args, options = {}) {
         idleTimeout: watchdogTriggered,
         watchdogTriggered,
         watchdogReason,
+        leaseExpired,
+        leaseReason,
       });
     });
   });

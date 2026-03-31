@@ -221,6 +221,6 @@ test("发布工作流已改为 GitHub CLI release 链路，避免 deprecated act
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /gh release edit/);
   assert.match(workflow, /releases\/generate-notes/);
-  assert.match(readme, /当前 `HelloLoop` 主进程仍然存活/);
-  assert.match(readme, /不会让 `HelloLoop` 脱离当前会话，在后台继续每 15 分钟自行重试/);
+  assert.match(readme, /detached supervisor \+ host lease/);
+  assert.match(readme, /当前 turn 取消 ≠ 停止 HelloLoop；关闭宿主窗口 = 停止 HelloLoop/);
 });

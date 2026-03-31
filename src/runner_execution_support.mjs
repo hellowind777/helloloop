@@ -70,6 +70,7 @@ export async function resolveExecutionSetup(context, options = {}) {
     maxAttemptsPerStrategy,
     maxStrategies: policy.stopOnFailure ? 1 : configuredStrategies,
     engineResolution,
+    hostLease: options.hostLease || null,
   };
 }
 
@@ -82,6 +83,19 @@ function updateTaskAndBuildResult(execution, status, result) {
   });
   saveBacklog(execution.context, execution.backlog);
   return result;
+}
+
+export function buildStoppedResult(execution, kind, summary, attempts, engineResolution) {
+  return updateTaskAndBuildResult(execution, "pending", {
+    ok: false,
+    stopped: true,
+    kind,
+    task: execution.task,
+    runDir: execution.runDir,
+    summary,
+    attempts,
+    engineResolution,
+  });
 }
 
 export function buildFailureResult(execution, kind, summary, attempts, engineResolution) {
