@@ -1,0 +1,34 @@
+[workspace]
+members = [
+  "apps/hello-cli",
+  "apps/hello-daemon",
+  "crates/helloloop-api",
+  "crates/helloloop-domain",
+  "crates/helloloop-host-claude",
+  "crates/helloloop-host-codex",
+  "crates/helloloop-host-gemini",
+  "crates/helloloop-runtime",
+  "crates/helloloop-scheduler",
+  "crates/helloloop-store",
+]
+resolver = "2"
+
+[workspace.package]
+authors = ["HelloLoop"]
+edition = "2024"
+license = "Apache-2.0"
+version = "0.11.0"
+
+[workspace.dependencies]
+axum = "0.8.6"
+chrono = { version = "0.4.42", features = ["clock", "serde"] }
+reqwest = { version = "0.12.24", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+sqlx = { version = "0.8.6", default-features = false, features = ["chrono", "runtime-tokio-rustls", "sqlite", "uuid"] }
+thiserror = "2.0.17"
+tokio = { version = "1.47.1", features = ["macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-stream = { version = "0.1.17", features = ["sync"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
+uuid = { version = "1.18.1", features = ["serde", "v7"] }

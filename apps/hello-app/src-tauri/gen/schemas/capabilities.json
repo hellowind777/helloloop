@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capability for Hello App desktop shell","local":true,"windows":["main"],"permissions":["core:default"]}}

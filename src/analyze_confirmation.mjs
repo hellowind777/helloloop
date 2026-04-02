@@ -5,6 +5,7 @@ import { resolveFullAutoMainlineOptions } from "./auto_execution_options.mjs";
 import { analyzeExecution, summarizeBacklog } from "./backlog.mjs";
 import { loadPolicy, loadVerifyCommands } from "./config.mjs";
 import { getEngineDisplayName } from "./engine_metadata.mjs";
+import { formatTaskRoleLabel, formatTaskStageLabel } from "./workflow_model.mjs";
 
 function toDisplayPath(repoRoot, targetPath) {
   const absolutePath = path.resolve(targetPath);
@@ -37,6 +38,9 @@ function formatTaskPreview(tasks) {
       `#${task.id}`,
       task.priority || "P2",
       `risk:${task.risk || "low"}`,
+      `stage:${formatTaskStageLabel(task.stage || "implementation")}`,
+      `role:${formatTaskRoleLabel(task.role || "developer")}`,
+      `lane:${task.lane || "mainline"}`,
     ];
     return `- ${parts.join(" | ")}`;
   });
@@ -135,6 +139,38 @@ function renderRepoDecisionLines(analysis) {
   ];
 }
 
+function renderWorkflowLines(analysis) {
+  const workflow = analysis?.workflow;
+  if (!workflow) {
+    return [];
+  }
+  return [
+    "建议主线：",
+    `- 仓库画像：${workflow.profileLabel || workflow.profile || "无"}`,
+    `- 当前焦点：${workflow.currentFocus || "无"}`,
+    `- 主线摘要：${workflow.mainlineSummary || "无"}`,
+    `- 阶段顺序：${Array.isArray(workflow.phaseOrder) && workflow.phaseOrder.length ? workflow.phaseOrder.map((item) => formatTaskStageLabel(item)).join(" -> ") : "无"}`,
+    `- 并行 lane：${Array.isArray(workflow.parallelLanes) && workflow.parallelLanes.length ? workflow.parallelLanes.join(" / ") : "mainline"}`,
+    ...(Array.isArray(workflow.coordinationRules) && workflow.coordinationRules.length
+      ? workflow.coordinationRules.map((item) => `- 协调规则：${item}`)
+      : []),
+  ];
+}
+
+function renderDocAnalysisLines(analysis) {
+  const docAnalysis = analysis?.docAnalysis;
+  if (!docAnalysis) {
+    return [];
+  }
+  return [
+    "文档画像：",
+    `- 摘要：${docAnalysis.summary || "无"}`,
+    ...(Array.isArray(docAnalysis.gaps) && docAnalysis.gaps.length
+      ? docAnalysis.gaps.map((item) => `- 待补线索：${item}`)
+      : []),
+  ];
+}
+
 function renderEngineResolutionLines(engineResolution) {
   if (!engineResolution?.engine) {
     return [];
@@ -187,6 +223,8 @@ export function renderAnalyzeConfirmation(context, analysis, backlog, options = 
     ...(renderEngineResolutionLines(options.engineResolution).length ? ["", ...renderEngineResolutionLines(options.engineResolution)] : []),
     ...(renderRequestInterpretationLines(analysis).length ? ["", ...renderRequestInterpretationLines(analysis)] : []),
     ...(renderRepoDecisionLines(analysis).length ? ["", ...renderRepoDecisionLines(analysis)] : []),
+    ...(renderDocAnalysisLines(analysis).length ? ["", ...renderDocAnalysisLines(analysis)] : []),
+    ...(renderWorkflowLines(analysis).length ? ["", ...renderWorkflowLines(analysis)] : []),
     "",
     "当前进度：",
     `- ${analysis.summary.currentState}`,

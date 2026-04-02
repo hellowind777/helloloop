@@ -2,6 +2,37 @@
   "version": 1,
   "project": "replace-with-your-project",
   "updatedAt": "2026-03-27T00:00:00.000Z",
+  "workflow": {
+    "methodology": "hierarchical_role_based_agile_multi_agent_sdlc",
+    "profile": "generic_repo",
+    "profileLabel": "通用代码仓",
+    "orchestrationMode": "central_supervisor",
+    "parallelStrategy": "ordered_mainline",
+    "docCoverageSummary": "当前尚未完成正式文档画像。",
+    "currentFocus": "先完成需求和架构对齐，再进入实现与验证。",
+    "mainlineSummary": "按产品 -> 架构 -> 实现 -> 测试 -> 评审 -> 交付的主线推进。",
+    "phaseOrder": [
+      "product",
+      "architecture",
+      "implementation",
+      "test",
+      "review",
+      "release"
+    ],
+    "parallelLanes": [
+      "mainline"
+    ],
+    "coordinationRules": [
+      "高层设计优先于实现。",
+      "实现完成后必须进入验证和评审。",
+      "所有任务都必须带明确验收条件。"
+    ]
+  },
+  "docAnalysis": {
+    "summary": "当前尚未完成正式文档画像。",
+    "gaps": [],
+    "entries": []
+  },
   "tasks": [
     {
       "id": "example-task-1",
@@ -9,6 +40,10 @@
       "status": "pending",
       "priority": "P1",
       "risk": "low",
+      "stage": "implementation",
+      "role": "developer",
+      "lane": "mainline",
+      "parallelGroup": null,
       "goal": "按开发文档完成一个可验证的小工作包。",
       "docs": [
         "docs/architecture/00-架构索引.md"
@@ -16,11 +51,17 @@
       "paths": [
         "src/"
       ],
+      "artifacts": [
+        "src/"
+      ],
+      "blockedBy": [],
       "acceptance": [
         "功能完成",
         "验证通过",
         "文档同步"
-      ]
+      ],
+      "dependsOn": [],
+      "verify": []
     }
   ]
 }

@@ -1,0 +1,94 @@
+.settings-form,
+.form-grid,
+.toggle-grid,
+.settings-actions,
+.workspace-actions {
+  display: grid;
+  gap: 14px;
+}
+
+.form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.toggle-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.field-group,
+.toggle-card {
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  padding: 14px;
+  min-width: 0;
+}
+
+.field-group {
+  display: grid;
+  gap: 10px;
+}
+
+.field-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field-help {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.field-control {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 11px 12px;
+  width: 100%;
+}
+
+.toggle-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.toggle-control {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+
+.workspace-callout {
+  margin-top: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  padding: 16px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.workspace-actions {
+  grid-template-columns: repeat(3, minmax(0, max-content));
+  align-items: center;
+}
+
+@media (max-width: 1500px) {
+  .form-grid,
+  .toggle-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1024px) {
+  .form-grid,
+  .toggle-grid,
+  .workspace-actions {
+    grid-template-columns: 1fr;
+  }
+}

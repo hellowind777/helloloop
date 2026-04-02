@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { formatList, tailText } from "./common.mjs";
 import { runEngineTask } from "./process.mjs";
+import { formatTaskRoleLabel, formatTaskStageLabel } from "./workflow_model.mjs";
 
 function section(title, content) {
   if (!content || !String(content).trim()) {
@@ -83,9 +84,16 @@ function buildTaskReviewPrompt({
       `- 编号：${task.id}`,
       `- 目标：${task.goal || "按文档完成当前工作包。"}`,
       `- 风险：${task.risk || "low"}`,
+      `- 阶段：${formatTaskStageLabel(task.stage || "implementation")}`,
+      `- 角色：${formatTaskRoleLabel(task.role || "developer")}`,
+      `- lane：${task.lane || "mainline"}`,
     ].join("\n")),
     listSection("开发文档", allDocs),
     listSection("涉及路径", task.paths || []),
+    listSection("关键产物", task.artifacts || []),
+    listSection("显式阻塞", Array.isArray(task.blockedBy)
+      ? task.blockedBy.map((item) => `${item.type}:${item.label} (${item.status})`)
+      : []),
     listSection("验收条件", task.acceptance || []),
     constraints.length ? listSection("项目约束", constraints) : "",
     repoStateText ? section("当前仓库状态摘要", repoStateText) : "",

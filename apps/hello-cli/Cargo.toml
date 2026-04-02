@@ -1,0 +1,14 @@
+[package]
+name = "hello-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+helloloop-domain = { path = "../../crates/helloloop-domain" }
+helloloop-runtime = { path = "../../crates/helloloop-runtime" }
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true

@@ -12,6 +12,7 @@ import {
   tailText,
   writeJson,
 } from "./common.mjs";
+import { readDashboardWebAsset } from "./dashboard_web_client.mjs";
 import { collectDashboardSnapshot, buildDashboardSnapshotSignature } from "./dashboard_command.mjs";
 import { renderDashboardWebHtml } from "./dashboard_web_page.mjs";
 import { resolveUserSettingsHome } from "./engine_selection_settings.mjs";
@@ -179,14 +180,26 @@ function sendJson(response, statusCode, payload) {
   response.end(`${JSON.stringify(payload, null, 2)}\n`);
 }
 
-function createSseClient(response, snapshot) {
+function writeSseEvent(response, eventName, payload) {
+  if (eventName) {
+    response.write(`event: ${eventName}\n`);
+  }
+  response.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function createSseClient(response, snapshot, options = {}) {
   let previousSignature = "";
   response.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",
   });
-  response.write(`data: ${JSON.stringify(snapshot)}\n\n`);
+  writeSseEvent(response, "", snapshot);
+  writeSseEvent(response, "heartbeat", {
+    polledAt: nowIso(),
+    generatedAt: snapshot.generatedAt || "",
+    pollMs: Math.max(500, Number(options.pollMs || 1500)),
+  });
   previousSignature = buildDashboardSnapshotSignature(snapshot);
   return {
     push(nextSnapshot) {
@@ -195,7 +208,10 @@ function createSseClient(response, snapshot) {
         return;
       }
       previousSignature = nextSignature;
-      response.write(`data: ${JSON.stringify(nextSnapshot)}\n\n`);
+      writeSseEvent(response, "", nextSnapshot);
+    },
+    heartbeat(payload) {
+      writeSseEvent(response, "heartbeat", payload);
     },
   };
 }
@@ -211,12 +227,21 @@ async function startWebDashboardServer(options = {}) {
 
   const server = http.createServer((request, response) => {
     const url = new URL(request.url || "/", buildWebUrl(bind, preferredPort));
+    const asset = readDashboardWebAsset(url.pathname);
+    if (asset) {
+      response.writeHead(200, {
+        "Content-Type": asset.contentType,
+        "Cache-Control": "no-store",
+      });
+      response.end(asset.content);
+      return;
+    }
     if (url.pathname === "/api/snapshot") {
       sendJson(response, 200, collectDashboardSnapshot());
       return;
     }
     if (url.pathname === "/events") {
-      const client = createSseClient(response, lastSnapshot);
+      const client = createSseClient(response, lastSnapshot, { pollMs });
       clients.add(client);
       request.on("close", () => clients.delete(client));
       return;
@@ -262,11 +287,18 @@ async function startWebDashboardServer(options = {}) {
 
   const timer = setInterval(() => {
     lastSnapshot = collectDashboardSnapshot();
+    const heartbeat = {
+      polledAt: nowIso(),
+      generatedAt: lastSnapshot.generatedAt || "",
+      pollMs,
+    };
     writeWebServerState({
       ...state,
       generatedAt: lastSnapshot.generatedAt,
+      heartbeatAt: heartbeat.polledAt,
     });
     for (const client of clients) {
+      client.heartbeat(heartbeat);
       client.push(lastSnapshot);
     }
   }, pollMs);

@@ -1,0 +1,417 @@
+.nav-list,
+.timeline-list,
+.detail-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nav-item,
+.hero,
+.panel,
+.focus-card,
+.metric-card,
+.session-card,
+.task-card,
+.timeline-item,
+.capability-card,
+.task-column {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.hero,
+.panel,
+.focus-card {
+  border-radius: 24px;
+  padding: 22px 24px;
+}
+
+.metric-card,
+.session-card,
+.task-card,
+.timeline-item,
+.capability-card,
+.task-column,
+.nav-item {
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.nav-item {
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.26);
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+:root[data-theme="dark"] .nav-item {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.nav-item.active,
+.session-card.active {
+  border-color: var(--border-strong);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+}
+
+.button,
+.ghost-button,
+.locale-button,
+.token-button,
+.filter-chip {
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  background: var(--surface-2);
+  border-radius: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.button:hover,
+.ghost-button:hover,
+.locale-button:hover,
+.token-button:hover,
+.filter-chip:hover,
+.session-card:hover {
+  background: var(--surface-3);
+  border-color: rgba(138, 174, 255, 0.32);
+  transform: translateY(-1px);
+}
+
+.button.primary {
+  background: linear-gradient(180deg, rgba(90, 130, 255, 0.22), rgba(51, 109, 255, 0.12));
+}
+
+.status-chip,
+.badge,
+.alert-pill,
+.notice-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--warn);
+}
+
+.status-dot.online {
+  background: var(--ok);
+}
+
+.status-dot.offline {
+  background: var(--warn);
+}
+
+.metric-value {
+  font-size: 30px;
+  font-weight: 700;
+  margin: 8px 0 6px;
+}
+
+.mini-metric {
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+}
+
+.session-card {
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.session-card.is-running {
+  border-color: rgba(51, 109, 255, 0.28);
+}
+
+.session-card.is-danger {
+  border-color: rgba(204, 68, 93, 0.28);
+}
+
+.card-topline,
+.task-meta,
+.timeline-meta,
+.detail-inline,
+.task-column-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.card-title,
+.hero-title,
+.detail-value,
+.task-copy,
+.timeline-copy,
+.capability-copy,
+.brand-subtitle,
+.focus-copy,
+.footer-meta,
+.meta-value,
+.empty,
+.story-copy,
+.story-meta,
+.bullet-list,
+.bottom-bar-text {
+  overflow-wrap: anywhere;
+}
+
+.focus-sections,
+.focus-section,
+.summary-grid,
+.semantic-grid,
+.focus-task-groups,
+.dependency-list,
+.token-list,
+.action-grid,
+.mini-stack,
+.story-list {
+  display: grid;
+  gap: 12px;
+}
+
+.detail-inline {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.task-column {
+  background: linear-gradient(180deg, var(--surface-2), var(--bg-elevated));
+  min-width: 0;
+}
+
+.task-column-title,
+.section-title {
+  margin: 0;
+}
+
+.task-card,
+.timeline-item,
+.capability-card,
+.detail-card {
+  min-width: 0;
+}
+
+.badge.ok {
+  color: var(--ok);
+  border-color: rgba(21, 152, 100, 0.2);
+}
+
+.badge.warn {
+  color: var(--warn);
+  border-color: rgba(184, 128, 29, 0.18);
+}
+
+.badge.danger {
+  color: var(--danger);
+  border-color: rgba(204, 68, 93, 0.2);
+}
+
+.badge.accent {
+  color: var(--accent);
+  border-color: rgba(51, 109, 255, 0.18);
+}
+
+.badge.neutral {
+  color: var(--muted);
+}
+
+.alert-pill {
+  color: var(--danger);
+  border-color: rgba(204, 68, 93, 0.2);
+  background: rgba(204, 68, 93, 0.08);
+}
+
+.notice-pill {
+  color: var(--ok);
+  border-color: rgba(21, 152, 100, 0.2);
+  background: rgba(21, 152, 100, 0.08);
+}
+
+.detail-card {
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  padding: 14px;
+}
+
+.summary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.summary-card,
+.semantic-card,
+.dependency-card,
+.action-card,
+.focus-task-list,
+.story-card {
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  padding: 14px;
+}
+
+.story-copy {
+  color: var(--text);
+  margin-top: 6px;
+}
+
+.story-meta {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.bullet-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.focus-task-groups {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.semantic-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.semantic-card.ok {
+  border-color: rgba(21, 152, 100, 0.18);
+}
+
+.semantic-card.warn {
+  border-color: rgba(184, 128, 29, 0.18);
+}
+
+.semantic-card.danger {
+  border-color: rgba(204, 68, 93, 0.18);
+}
+
+.semantic-card.accent {
+  border-color: rgba(51, 109, 255, 0.18);
+}
+
+.token-list {
+  grid-template-columns: repeat(auto-fit, minmax(120px, max-content));
+}
+
+.token {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.action-card .button[disabled] {
+  opacity: 0.56;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.action-meta {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 10px;
+  overflow-wrap: anywhere;
+}
+
+.bottom-bar-label,
+.bottom-bar-text {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.task-deps {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.wrap {
+  flex-wrap: wrap;
+}
+
+.filter-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.filter-chip,
+.token-button {
+  font-size: 12px;
+}
+
+.filter-chip.active {
+  background: linear-gradient(180deg, rgba(90, 130, 255, 0.22), rgba(51, 109, 255, 0.12));
+  border-color: rgba(51, 109, 255, 0.28);
+}
+
+.token-button,
+.token {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.lane-card,
+.flow-node {
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  padding: 14px;
+  min-width: 0;
+}
+
+.flow-node.running {
+  border-color: rgba(51, 109, 255, 0.18);
+}
+
+.flow-node.completed {
+  border-color: rgba(21, 152, 100, 0.18);
+}
+
+.flow-node.failed_recoverable,
+.flow-node.failed_terminal {
+  border-color: rgba(204, 68, 93, 0.18);
+}

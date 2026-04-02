@@ -34,9 +34,9 @@ export function createContext(options = {}) {
     supervisorRequestFile: resolveFrom(configRoot, "supervisor", "request.json"),
     supervisorStateFile: resolveFrom(configRoot, "supervisor", "state.json"),
     supervisorResultFile: resolveFrom(configRoot, "supervisor", "result.json"),
+    supervisorPauseFile: resolveFrom(configRoot, "supervisor", "pause.json"),
     supervisorStdoutFile: resolveFrom(configRoot, "supervisor", "stdout.log"),
     supervisorStderrFile: resolveFrom(configRoot, "supervisor", "stderr.log"),
     repoVerifyFile: resolveFrom(repoRoot, ".helloagents", "verify.yaml"),
   };
 }
-

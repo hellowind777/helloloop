@@ -11,6 +11,7 @@ import { installPluginBundle, uninstallPluginBundle } from "./install.mjs";
 import { runLoop, runOnce, renderStatusText } from "./runner.mjs";
 import { collectRepoStatusSnapshot } from "./runner_status.mjs";
 import { renderInstallSummary, renderUninstallSummary } from "./cli_render.mjs";
+import { clearPausedMainline, pauseMainline } from "./supervisor_control.mjs";
 import {
   launchAndMaybeWatchSupervisedCommand,
   shouldUseSupervisor,
@@ -119,6 +120,22 @@ export async function handleResumeHostCommand(context, options) {
   return runHostContinuationCommand(context, options);
 }
 
+export async function handlePauseMainlineCommand(context, options) {
+  const result = await pauseMainline(context, options);
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return 0;
+  }
+
+  console.log([
+    "已暂停当前主线。",
+    `- 会话：${result.sessionId}`,
+    `- 动作：${result.command}`,
+    `- 说明：${result.message}`,
+  ].join("\n"));
+  return 0;
+}
+
 export async function handleWatchCommand(context, options) {
   const result = await watchSupervisorSessionWithRecovery(context, {
     sessionId: options.sessionId,
@@ -161,6 +178,9 @@ export async function handleRunOnceCommand(context, options) {
     return payload.exitCode || 0;
   }
 
+  if (!options.dryRun) {
+    clearPausedMainline(context);
+  }
   const result = await runOnce(context, options);
   if (!result.ok) {
     console.error(result.summary || "执行失败。");
@@ -185,6 +205,7 @@ export async function handleRunLoopCommand(context, options) {
     return payload.exitCode || 0;
   }
 
+  clearPausedMainline(context);
   const results = await runLoop(context, options);
   const failed = results.find((item) => !item.ok);
 

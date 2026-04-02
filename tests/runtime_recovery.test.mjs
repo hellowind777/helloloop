@@ -23,6 +23,22 @@ test("运行时恢复分类会把 429 / 5xx / 网络中断识别为软阻塞", (
   assert.equal(network.family, "soft");
 });
 
+test("运行时恢复分类不会被早期 stdout 噪声里的 token/schema 误判掉 429", () => {
+  const failure = classifyRuntimeRecoveryFailure({
+    result: {
+      ok: false,
+      stdout: [
+        "reading docs about gateway profile token create",
+        "document mentions json schema constraints",
+        "final error: exceeded retry limit, last status: 429 Too Many Requests",
+      ].join("\n"),
+    },
+  });
+
+  assert.equal(failure.family, "soft");
+  assert.equal(failure.code, "rate_limit");
+});
+
 test("运行时恢复分类会把 watchdog 空转视为软阻塞", () => {
   const failure = classifyRuntimeRecoveryFailure({
     result: { ok: false, watchdogTriggered: true, watchdogReason: "长时间无输出" },

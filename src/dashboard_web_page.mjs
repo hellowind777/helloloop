@@ -1,5 +1,3 @@
-import { DASHBOARD_WEB_CSS, DASHBOARD_WEB_JS } from "./dashboard_web_client.mjs";
-
 function escapeInlineJson(value) {
   return JSON.stringify(value)
     .replace(/</gu, "\\u003c")
@@ -20,30 +18,31 @@ export function renderDashboardWebHtml(options = {}) {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>HelloLoop Dashboard</title>
-  <style>${DASHBOARD_WEB_CSS}</style>
+  <title>HelloLoop Ops Center</title>
+  <link rel="stylesheet" href="/assets/dashboard.css" />
 </head>
 <body>
-  <header>
-    <div class="title-row">
+  <header class="topbar">
+    <div class="topbar-main">
       <div class="title">
-        <h1>HelloLoop Dashboard</h1>
-        <p>本地实时多仓开发看板。页面会持续订阅后台会话状态，不依赖宿主聊天流刷新。</p>
+        <h1 id="title-text">HelloLoop Ops Center</h1>
+        <p id="title-copy">面向多仓、多会话、多任务主线的实时开发指挥台，支持总览、任务、会话、依赖、追踪与洞察多视图协同。</p>
       </div>
-      <div class="pill" id="update-pill">等待首帧</div>
+      <div class="topbar-pills">
+        <div class="pill" id="update-pill">等待首帧</div>
+        <div class="pill" id="session-pill">仓库 0 · 活跃会话 0</div>
+      </div>
     </div>
-    <div class="stats-row">
-      <div class="stats" id="stats"></div>
-      <div class="pill" id="session-pill">仓库 0 · 活跃会话 0</div>
-    </div>
+    <div class="stats-row" id="stats"></div>
   </header>
-  <main id="board"></main>
+  <main id="app" class="app-host"></main>
+  <div class="drawer-backdrop" id="drawer-backdrop"></div>
   <aside class="drawer" id="drawer">
-    <button class="drawer-close" id="drawer-close">关闭</button>
+    <button type="button" class="drawer-close" id="drawer-close">关闭</button>
     <div id="drawer-content"></div>
   </aside>
   <script>window.__HELLOLOOP_INITIAL_SNAPSHOT__ = ${escapeInlineJson(initialSnapshot)};</script>
-  <script>${DASHBOARD_WEB_JS}</script>
+  <script type="module" src="/assets/dashboard-app.mjs"></script>
 </body>
 </html>`;
 }

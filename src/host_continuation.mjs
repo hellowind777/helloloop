@@ -3,6 +3,7 @@ import path from "node:path";
 import { ensureDir, fileExists, nowIso, readJson, sleep, writeJson, writeText } from "./common.mjs";
 import { createContext } from "./context.mjs";
 import { collectRepoStatusSnapshot } from "./runner_status.mjs";
+import { deriveSessionStatusModel, formatStatusTimestamp, resolveCurrentActionLabel, resolveTodoProgress } from "./status_model.mjs";
 
 const RESUME_DIR_NAME = "host-resume";
 const SNAPSHOT_FILE_NAME = "resume.json";
@@ -30,6 +31,35 @@ const ISSUE_MATCHERS = [
     patterns: ["network", "timeout", "timed out", "connection reset", "stream closed", "socket"],
   },
 ];
+
+const RUNTIME_STATUS_LABELS = {
+  recovering: "后台自动恢复中",
+  suspected_stall: "疑似卡住，继续观察",
+  watchdog_terminating: "watchdog 正在终止当前进程",
+  watchdog_waiting: "watchdog 等待进程退出",
+  retry_waiting: "等待自动重试",
+  probe_waiting: "等待健康探测",
+  probe_running: "正在健康探测",
+  paused_operator: "已由操作员暂停",
+  paused_manual: "自动恢复预算已耗尽",
+  lease_terminating: "宿主租约失效，正在停止",
+  stopped_host_closed: "宿主窗口已关闭",
+  completed: "当前任务已完成",
+  failed: "当前任务执行失败",
+};
+
+const FAILURE_CODE_LABELS = {
+  watchdog_idle: "长时间无可见进展",
+  rate_limit: "限流或临时容量不足",
+  server: "服务端暂时异常",
+  network: "网络或流中断",
+  operator_paused: "已由操作员暂停",
+  auth: "鉴权或权限异常",
+  billing: "账单或额度异常",
+  environment: "环境或权限异常",
+  host_closed: "宿主窗口已关闭",
+  unknown_failure: "未知失败",
+};
 
 function resumeRoot(context) {
   return path.join(context.configRoot, RESUME_DIR_NAME);
@@ -89,11 +119,51 @@ function shouldInferIssue(snapshot, summaryText) {
   return ISSUE_MATCHERS.some((matcher) => matcher.patterns.some((pattern) => normalized.includes(String(pattern).toLowerCase())));
 }
 
-function buildCurrentAction(snapshot) {
+export function buildRuntimeDisplayLabel(runtime) {
+  const status = normalizeText(runtime?.status).toLowerCase();
+  if (!status || status === "running" || status === "idle") {
+    return "";
+  }
+  const statusLabel = RUNTIME_STATUS_LABELS[status] || `运行状态：${status}`;
+  if (status === "completed") {
+    return statusLabel;
+  }
+  const details = [];
+  const failureCode = normalizeText(runtime?.failureCode).toLowerCase();
+  if (failureCode && FAILURE_CODE_LABELS[failureCode]) {
+    details.push(FAILURE_CODE_LABELS[failureCode]);
+  }
+  if (runtime?.nextRetryAt) {
+    details.push(`下次 ${formatStatusTimestamp(runtime.nextRetryAt)}`);
+  }
+  return normalizeText([statusLabel, ...details].join(" | "));
+}
+
+function buildRuntimeIssue(snapshot) {
+  const status = normalizeText(snapshot?.runtime?.status).toLowerCase();
+  if (!status) {
+    return null;
+  }
+  if (["retry_waiting", "probe_waiting", "probe_running", "recovering", "watchdog_waiting", "watchdog_terminating", "lease_terminating"].includes(status)) {
+    const label = RUNTIME_STATUS_LABELS[status] || "后台自动恢复中";
+    const detailLines = [
+      snapshot?.runtime?.failureReason || "",
+      snapshot?.runtime?.nextRetryAt ? `预计重试：${formatStatusTimestamp(snapshot.runtime.nextRetryAt)}` : "",
+    ].filter(Boolean);
+    return {
+      code: normalizeText(snapshot?.runtime?.failureCode || status) || status,
+      label,
+      summary: detailLines.join("\n"),
+    };
+  }
+  return null;
+}
+
+export function buildDisplayCurrentAction(snapshot) {
   return normalizeText(
-    snapshot?.activity?.current?.label
+    buildRuntimeDisplayLabel(snapshot?.runtime)
+    || resolveCurrentActionLabel(snapshot)
     || snapshot?.runtime?.failureReason
-    || snapshot?.latestStatus?.message
     || snapshot?.runtime?.status
     || snapshot?.supervisor?.status
     || "等待新事件",
@@ -123,6 +193,28 @@ function buildPromptLines(context, hostResume) {
     `当前动作：${hostResume.currentAction || "等待新事件"}`,
     `当前运行状态：${hostResume.runtimeStatus || "idle"}`,
   ];
+
+  if (hostResume.statusModel?.label) {
+    lines.push(`当前状态：${hostResume.statusModel.label}`);
+  }
+  if (hostResume.statusModel?.scheduler?.label) {
+    lines.push(`调度语义：${hostResume.statusModel.scheduler.label}`);
+  }
+  if (hostResume.statusModel?.reason) {
+    lines.push(`状态原因：${hostResume.statusModel.reason}`);
+  }
+  if (hostResume.statusModel?.failure?.label) {
+    lines.push(`故障归类：${hostResume.statusModel.failure.label}`);
+  }
+  if (hostResume.statusModel?.autoAction) {
+    lines.push(`自动动作：${hostResume.statusModel.autoAction}`);
+  }
+  if (hostResume.statusModel?.wait?.label) {
+    lines.push(`等待状态：${hostResume.statusModel.wait.label}`);
+  }
+  if (hostResume.statusModel?.waitTargetLabel) {
+    lines.push(`等待对象：${hostResume.statusModel.waitTargetLabel}`);
+  }
 
   if (hostResume.issue?.label) {
     lines.push(`最近宿主异常：${hostResume.issue.label}`);
@@ -160,20 +252,20 @@ export function buildHostContinuationSnapshot(context, options = {}) {
   const sessionId = normalizeText(options.sessionId || snapshot?.supervisor?.sessionId);
   const supervisorStatus = normalizeText(snapshot?.supervisor?.status);
   const runtimeStatus = normalizeText(snapshot?.runtime?.status || snapshot?.latestStatus?.stage || "idle");
-  const currentAction = buildCurrentAction(snapshot);
-  const todoCompleted = Number(snapshot?.activity?.todo?.completed || 0);
-  const todoTotal = Number(snapshot?.activity?.todo?.total || 0);
-  const todoLabel = todoTotal > 0 ? `${todoCompleted}/${todoTotal}` : "";
+  const currentAction = buildDisplayCurrentAction(snapshot);
+  const todoLabel = resolveTodoProgress(snapshot);
   const issueSummary = [
     snapshot?.runtime?.failureReason,
     snapshot?.latestStatus?.message,
     snapshot?.runtime?.status,
     currentAction,
   ].filter(Boolean).join("\n");
-  const issue = shouldInferIssue(snapshot, issueSummary)
+  const issue = buildRuntimeIssue(snapshot)
+    || (shouldInferIssue(snapshot, issueSummary)
     ? findIssue(issueSummary)
-    : null;
+    : null);
   const recentFiles = buildRecentFiles(snapshot);
+  const statusModel = deriveSessionStatusModel(snapshot);
 
   const hostResume = {
     schemaVersion: 1,
@@ -191,6 +283,7 @@ export function buildHostContinuationSnapshot(context, options = {}) {
     currentAction,
     todoLabel,
     issue,
+    statusModel,
     nextTaskId: snapshot?.nextTask?.id || "",
     nextTaskTitle: normalizeText(snapshot?.nextTask?.title),
     recentFiles,
@@ -243,6 +336,11 @@ export function renderHostContinuationText(hostResume) {
     `当前任务：${hostResume.taskTitle || "无"}`,
     `当前阶段：${hostResume.stage || "unknown"}`,
     `当前动作：${hostResume.currentAction || "等待新事件"}`,
+    ...(hostResume.statusModel?.label ? [`当前状态：${hostResume.statusModel.label}`] : []),
+    ...(hostResume.statusModel?.scheduler?.label ? [`调度语义：${hostResume.statusModel.scheduler.label}`] : []),
+    ...(hostResume.statusModel?.reason ? [`状态原因：${hostResume.statusModel.reason}`] : []),
+    ...(hostResume.statusModel?.failure?.label ? [`故障归类：${hostResume.statusModel.failure.label}`] : []),
+    ...(hostResume.statusModel?.wait?.label ? [`等待状态：${hostResume.statusModel.wait.label}`] : []),
     ...(hostResume.issue?.label ? [`最近异常：${hostResume.issue.label}`] : []),
     ...(hostResume.todoLabel ? [`当前待办：${hostResume.todoLabel}`] : []),
     ...(hostResume.nextTaskTitle ? [`下一任务：${hostResume.nextTaskTitle}`] : []),

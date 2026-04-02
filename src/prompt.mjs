@@ -5,6 +5,7 @@ import {
   listMandatoryEngineeringPrinciples,
   resolveProjectConstraints,
 } from "./guardrails.mjs";
+import { formatTaskRoleLabel, formatTaskStageLabel } from "./workflow_model.mjs";
 
 function normalizeDocEntry(doc) {
   return String(doc || "").trim().replaceAll("\\", "/");
@@ -90,9 +91,17 @@ export function buildTaskPrompt({
       `- 编号：${task.id}`,
       `- 优先级：${task.priority || "P2"}`,
       `- 风险等级：${task.risk || "low"}`,
+      `- 阶段：${formatTaskStageLabel(task.stage || "implementation")}`,
+      `- 角色：${formatTaskRoleLabel(task.role || "developer")}`,
+      `- lane：${task.lane || "mainline"}`,
+      task.parallelGroup ? `- 并行组：${task.parallelGroup}` : "",
       `- 目标：${task.goal || "按文档完成当前工作包。"}`,
     ].join("\n")),
     listSection("涉及路径", task.paths || []),
+    listSection("关键产物", task.artifacts || []),
+    listSection("显式阻塞", Array.isArray(task.blockedBy)
+      ? task.blockedBy.map((item) => `${item.type}:${item.label} (${item.status})`)
+      : []),
     listSection("验收条件", task.acceptance || []),
     listSection("内建安全底线", mandatoryGuardrails),
     listSection("强制编码与产出基线", mandatoryEngineeringPrinciples),

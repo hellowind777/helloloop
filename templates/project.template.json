@@ -3,12 +3,19 @@
   "constraints": [],
   "defaultEngine": "",
   "lastSelectedEngine": "",
+  "workflow": null,
+  "docAnalysis": null,
   "planner": {
     "minTasks": 3,
     "maxTasks": 8,
+    "methodology": "hierarchical_role_based_agile_multi_agent_sdlc",
     "roleInference": true,
+    "maxParallelLanes": 4,
+    "stageGateMode": "lane_gated",
     "workflowHints": [
-      "先识别每份文档在开发流程中的角色，再组织主线任务。",
+      "先识别每份文档在 SDLC 中承担的角色，再组织主线任务。",
+      "优先按产品/架构/契约/实现/验证/评审的主线推进。",
+      "允许实现与测试按 lane 并行，但必须保留明确会合点与门禁。",
       "优先输出可逐步开发、测试、验收的任务。",
       "避免把整个文档目录压成一个大任务。"
     ]

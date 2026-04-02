@@ -1,0 +1,13 @@
+[package]
+name = "helloloop-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+chrono.workspace = true
+helloloop-domain = { path = "../helloloop-domain" }
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true

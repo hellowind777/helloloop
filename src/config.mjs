@@ -54,10 +54,14 @@ const defaultPolicy = {
 const defaultPlanner = {
   minTasks: 3,
   maxTasks: 8,
+  methodology: "hierarchical_role_based_agile_multi_agent_sdlc",
   roleInference: true,
+  maxParallelLanes: 4,
+  stageGateMode: "lane_gated",
   workflowHints: [
-    "先识别每份文档的角色和可信度，再组织主线。",
-    "优先输出可逐步开发、测试、验收的任务。",
+    "先识别每份文档在 SDLC 中承担的角色，再组织主线。",
+    "优先使用分层角色导向的产品/架构/契约/实现/验证/评审主线。",
+    "允许实现与测试按 lane 并行，但必须保留明确的会合点和验收门禁。",
     "避免把整个文档目录压成一个大任务。",
   ],
 };
@@ -99,6 +103,8 @@ export function loadProjectConfig(context) {
       constraints: [],
       defaultEngine: "",
       lastSelectedEngine: "",
+      workflow: null,
+      docAnalysis: null,
       planner: defaultPlanner,
     };
   }
@@ -109,6 +115,8 @@ export function loadProjectConfig(context) {
     constraints: Array.isArray(config.constraints) ? config.constraints : [],
     defaultEngine: typeof config.defaultEngine === "string" ? config.defaultEngine : "",
     lastSelectedEngine: typeof config.lastSelectedEngine === "string" ? config.lastSelectedEngine : "",
+    workflow: config.workflow && typeof config.workflow === "object" ? config.workflow : null,
+    docAnalysis: config.docAnalysis && typeof config.docAnalysis === "object" ? config.docAnalysis : null,
     planner: {
       ...defaultPlanner,
       ...(config.planner || {}),
@@ -189,4 +197,3 @@ export function scaffoldIfMissing(context) {
 
   return created;
 }
-

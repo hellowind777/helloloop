@@ -107,6 +107,7 @@ function formatRuntimeState(runtime, previousRuntime) {
     retry_waiting: "等待自动重试",
     probe_waiting: "准备执行健康探测",
     probe_running: "正在执行健康探测",
+    paused_operator: "主线已由操作员暂停",
     paused_manual: "自动恢复预算已耗尽，任务暂停",
     lease_terminating: "宿主租约失效，正在停止当前子进程",
     stopped_host_closed: "宿主窗口已关闭，后台任务停止",

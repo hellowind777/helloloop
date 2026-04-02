@@ -1,3 +1,5 @@
+import fs from "node:fs";
+
 import { nowIso, readJson, writeJson } from "./common.mjs";
 
 export const ACTIVE_SUPERVISOR_STATUSES = new Set(["launching", "running"]);
@@ -37,6 +39,10 @@ export function readSupervisorState(context) {
   return readJsonIfExists(context.supervisorStateFile);
 }
 
+export function readSupervisorPause(context) {
+  return readJsonIfExists(context.supervisorPauseFile);
+}
+
 export function hasActiveSupervisor(context) {
   const state = readSupervisorState(context);
   const activePid = Number(state?.guardianPid || state?.pid || 0);
@@ -61,4 +67,21 @@ export function writeActiveSupervisorState(context, patch = {}) {
     nextPatch.message = "";
   }
   writeSupervisorState(context, nextPatch);
+}
+
+export function writeSupervisorPause(context, patch = {}) {
+  const current = readSupervisorPause(context) || {};
+  writeJson(context.supervisorPauseFile, {
+    ...current,
+    ...patch,
+    updatedAt: nowIso(),
+  });
+}
+
+export function clearSupervisorPause(context) {
+  try {
+    fs.rmSync(context.supervisorPauseFile, { force: true });
+  } catch {
+    // ignore pause cleanup failures
+  }
 }

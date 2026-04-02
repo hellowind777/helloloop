@@ -1,0 +1,20 @@
+[package]
+name = "hello-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+axum.workspace = true
+helloloop-api = { path = "../../crates/helloloop-api" }
+helloloop-domain = { path = "../../crates/helloloop-domain" }
+helloloop-host-claude = { path = "../../crates/helloloop-host-claude" }
+helloloop-host-codex = { path = "../../crates/helloloop-host-codex" }
+helloloop-host-gemini = { path = "../../crates/helloloop-host-gemini" }
+helloloop-runtime = { path = "../../crates/helloloop-runtime" }
+helloloop-scheduler = { path = "../../crates/helloloop-scheduler" }
+helloloop-store = { path = "../../crates/helloloop-store" }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

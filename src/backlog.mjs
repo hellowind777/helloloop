@@ -1,3 +1,5 @@
+import { rankTaskStage, resolveTaskTrackKey } from "./workflow_model.mjs";
+
 const priorityRank = {
   P0: 0,
   P1: 1,
@@ -20,6 +22,8 @@ function sortTasks(backlog, tasks) {
   return [...tasks].sort((left, right) => {
     const byPriority = rankPriority(left.priority) - rankPriority(right.priority);
     if (byPriority !== 0) return byPriority;
+    const byStage = rankTaskStage(left.stage) - rankTaskStage(right.stage);
+    if (byStage !== 0) return byStage;
     return backlog.tasks.findIndex((item) => item.id === left.id)
       - backlog.tasks.findIndex((item) => item.id === right.id);
   });
@@ -48,16 +52,63 @@ export function summarizeBacklog(backlog) {
 }
 
 export function dependenciesSatisfied(backlog, task) {
-  const deps = Array.isArray(task.dependsOn) ? task.dependsOn : [];
-  if (!deps.length) return true;
-  return deps.every((depId) => backlog.tasks.some((item) => item.id === depId && item.status === "done"));
+  return unresolvedDependencies(backlog, task).length === 0;
 }
 
 export function unresolvedDependencies(backlog, task) {
   const deps = Array.isArray(task.dependsOn) ? task.dependsOn : [];
-  return deps.filter(
+  const explicit = deps.filter(
     (depId) => !backlog.tasks.some((item) => item.id === depId && item.status === "done"),
   );
+  const trackKey = resolveTaskTrackKey(task);
+  const taskStageRank = rankTaskStage(task?.stage);
+  const implicit = backlog.tasks
+    .filter((item) => (
+      item.id !== task.id
+      && resolveTaskTrackKey(item) === trackKey
+      && rankTaskStage(item?.stage) < taskStageRank
+      && String(item.status || "pending") !== "done"
+    ))
+    .map((item) => item.id);
+  return [...new Set([...explicit, ...implicit])];
+}
+
+function unresolvedDependencyRefs(backlog, task) {
+  const deps = Array.isArray(task.dependsOn) ? task.dependsOn : [];
+  const explicit = deps
+    .filter((depId) => !backlog.tasks.some((item) => item.id === depId && item.status === "done"))
+    .map((depId) => ({ id: depId, kind: "dependency" }));
+  const trackKey = resolveTaskTrackKey(task);
+  const taskStageRank = rankTaskStage(task?.stage);
+  const implicit = backlog.tasks
+    .filter((item) => (
+      item.id !== task.id
+      && resolveTaskTrackKey(item) === trackKey
+      && rankTaskStage(item?.stage) < taskStageRank
+      && String(item.status || "pending") !== "done"
+    ))
+    .map((item) => ({ id: item.id, kind: "stage_gate" }));
+  return [...explicit, ...implicit].filter((item, index, items) => (
+    items.findIndex((candidate) => candidate.id === item.id && candidate.kind === item.kind) === index
+  ));
+}
+
+function openBlockingSignals(task) {
+  return (Array.isArray(task?.blockedBy) ? task.blockedBy : [])
+    .filter((item) => item && item.status !== "resolved");
+}
+
+function classifyBlockingSignals(task) {
+  const items = openBlockingSignals(task);
+  const hasManual = items.some((item) => ["manual_input", "approval"].includes(String(item.type || "")));
+  const hasExternal = items.some((item) => ["repo", "artifact", "external_system"].includes(String(item.type || "")));
+  if (hasManual) {
+    return "manual";
+  }
+  if (hasExternal) {
+    return "external";
+  }
+  return items.length ? "task" : "";
 }
 
 export function isHighRiskTask(task) {
@@ -75,7 +126,8 @@ export function analyzeExecution(backlog, options = {}) {
   const maxRisk = options.maxRisk || "low";
   const pendingTasks = backlog.tasks.filter((task) => String(task.status || "pending") === "pending");
   const readyTasks = pendingTasks.filter((task) => dependenciesSatisfied(backlog, task));
-  const executableTasks = readyTasks.filter((task) => allowHighRisk || withinRiskThreshold(task, maxRisk));
+  const unblockedReadyTasks = readyTasks.filter((task) => !openBlockingSignals(task).length);
+  const executableTasks = unblockedReadyTasks.filter((task) => allowHighRisk || withinRiskThreshold(task, maxRisk));
 
   if (executableTasks.length) {
     return {
@@ -109,8 +161,34 @@ export function analyzeExecution(backlog, options = {}) {
     };
   }
 
-  if (readyTasks.length) {
-    const riskBlockedTask = sortTasks(backlog, readyTasks)[0];
+  const externalBlockedTask = sortTasks(backlog, readyTasks.filter((task) => classifyBlockingSignals(task) === "external"))[0];
+  if (externalBlockedTask) {
+    return {
+      state: "blocked_external",
+      task: null,
+      blockedTask: externalBlockedTask,
+      blockedReason: `任务 ${externalBlockedTask.title} 正等待外部依赖或产物就绪。`,
+      blockingSignals: openBlockingSignals(externalBlockedTask),
+      unresolved: [],
+      unresolvedRefs: [],
+    };
+  }
+
+  const manualBlockedTask = sortTasks(backlog, readyTasks.filter((task) => classifyBlockingSignals(task) === "manual"))[0];
+  if (manualBlockedTask) {
+    return {
+      state: "blocked_manual_input",
+      task: null,
+      blockedTask: manualBlockedTask,
+      blockedReason: `任务 ${manualBlockedTask.title} 正等待人工输入、审批或放行。`,
+      blockingSignals: openBlockingSignals(manualBlockedTask),
+      unresolved: [],
+      unresolvedRefs: [],
+    };
+  }
+
+  if (unblockedReadyTasks.length) {
+    const riskBlockedTask = sortTasks(backlog, unblockedReadyTasks)[0];
     return {
       state: "blocked_risk",
       task: null,
@@ -123,14 +201,19 @@ export function analyzeExecution(backlog, options = {}) {
   if (pendingTasks.length) {
     const dependencyBlockedTask = sortTasks(backlog, pendingTasks)[0];
     const unresolved = unresolvedDependencies(backlog, dependencyBlockedTask);
+    const unresolvedRefs = unresolvedDependencyRefs(backlog, dependencyBlockedTask);
+    const hasStageGate = unresolvedRefs.some((item) => item.kind === "stage_gate");
     return {
-      state: "blocked_dependencies",
+      state: hasStageGate ? "blocked_stage_gates" : "blocked_dependencies",
       task: null,
       blockedTask: dependencyBlockedTask,
       blockedReason: unresolved.length
-        ? `任务 ${dependencyBlockedTask.title} 仍依赖未完成任务：${unresolved.join(", ")}`
+        ? (hasStageGate
+          ? `任务 ${dependencyBlockedTask.title} 仍需等待更早阶段任务完成：${unresolved.join(", ")}`
+          : `任务 ${dependencyBlockedTask.title} 仍依赖未完成任务：${unresolved.join(", ")}`)
         : `任务 ${dependencyBlockedTask.title} 当前不可执行，请检查依赖与状态。`,
       unresolved,
+      unresolvedRefs,
     };
   }
 
@@ -145,6 +228,18 @@ export function analyzeExecution(backlog, options = {}) {
 
 export function selectNextTask(backlog, options = {}) {
   return analyzeExecution(backlog, options).task;
+}
+
+export function analyzeAutomationExecution(backlog, options = {}) {
+  return analyzeExecution(backlog, {
+    ...options,
+    allowHighRisk: true,
+    fullAutoMainline: true,
+  });
+}
+
+export function selectAutomationNextTask(backlog, options = {}) {
+  return analyzeAutomationExecution(backlog, options).task;
 }
 
 export function getTask(backlog, taskId) {
@@ -166,5 +261,8 @@ export function renderTaskSummary(task) {
     `状态：${task.status || "pending"}`,
     `优先级：${task.priority || "P2"}`,
     `风险：${task.risk || "low"}`,
+    `阶段：${task.stage || "implementation"}`,
+    `角色：${task.role || "developer"}`,
+    `lane：${task.lane || "mainline"}`,
   ].join("\n");
 }

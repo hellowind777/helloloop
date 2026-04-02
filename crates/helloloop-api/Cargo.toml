@@ -1,0 +1,19 @@
+[package]
+name = "helloloop-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+axum.workspace = true
+chrono.workspace = true
+helloloop-domain = { path = "../helloloop-domain" }
+helloloop-runtime = { path = "../helloloop-runtime" }
+helloloop-scheduler = { path = "../helloloop-scheduler" }
+helloloop-store = { path = "../helloloop-store" }
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true

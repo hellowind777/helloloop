@@ -157,8 +157,33 @@ function normalizeText(value) {
   return String(value || "").toLowerCase();
 }
 
+function detectHttpStatusCode(normalizedText = "") {
+  const matched = String(normalizedText || "").match(/\b(400|401|403|429|500|501|502|503|504)\b/u);
+  return matched ? Number(matched[1]) : 0;
+}
+
 function hasMatcher(normalizedText, matcher) {
   return matcher.patterns.some((pattern) => normalizedText.includes(String(pattern).toLowerCase()));
+}
+
+function lastNonEmptyLine(text = "") {
+  const lines = String(text || "").replaceAll("\r\n", "\n").split("\n");
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = String(lines[index] || "").trim();
+    if (line) {
+      return line;
+    }
+  }
+  return "";
+}
+
+function buildFailureInspectionText(result = {}) {
+  return normalizeText([
+    result.stderr,
+    result.finalMessage,
+    lastNonEmptyLine(result.stdout),
+    tailText(result.watchdogReason, 10),
+  ].filter(Boolean).join("\n"));
 }
 
 export function resolveRuntimeRecoveryPolicy(policy = {}) {
@@ -210,18 +235,14 @@ export function selectRuntimeRecoveryDelayMs(recoveryPolicy, family, nextRecover
 }
 
 export function classifyRuntimeRecoveryFailure({ result = {} } = {}) {
-  const normalized = normalizeText([
-    result.stderr,
-    result.stdout,
-    result.finalMessage,
-    result.watchdogReason,
-  ].filter(Boolean).join("\n"));
+  const normalized = buildFailureInspectionText(result);
 
   if (result.watchdogTriggered || result.idleTimeout) {
     return {
       code: "watchdog_idle",
       family: "soft",
       reason: "当前进程长时间没有可见进展，HelloLoop 将按软阻塞策略继续探测并恢复。",
+      httpStatus: 0,
     };
   }
 
@@ -231,6 +252,7 @@ export function classifyRuntimeRecoveryFailure({ result = {} } = {}) {
         code: matcher.code,
         family: "hard",
         reason: matcher.reason,
+        httpStatus: detectHttpStatusCode(normalized),
       };
     }
   }
@@ -241,6 +263,7 @@ export function classifyRuntimeRecoveryFailure({ result = {} } = {}) {
         code: matcher.code,
         family: "soft",
         reason: matcher.reason,
+        httpStatus: detectHttpStatusCode(normalized),
       };
     }
   }
@@ -249,6 +272,7 @@ export function classifyRuntimeRecoveryFailure({ result = {} } = {}) {
     code: "unknown_failure",
     family: "soft",
     reason: "当前错误类型无法稳定归类，HelloLoop 将按软阻塞策略持续探测并恢复。",
+    httpStatus: detectHttpStatusCode(normalized),
   };
 }
 

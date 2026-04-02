@@ -75,6 +75,7 @@ export async function runEngineTask({
         recoveryHistory,
         code: stopped.code,
         failureCode: "host_closed",
+        failureHttpStatus: 0,
         failureFamily: "host_lease",
         failureReason: stopped.leaseReason,
       });
@@ -122,6 +123,7 @@ export async function runEngineTask({
         finalMessage: taskAttempt.finalMessage,
         code: taskAttempt.result.code,
         failureCode: "host_closed",
+        failureHttpStatus: 0,
         failureFamily: "host_lease",
         failureReason: taskAttempt.result.leaseReason,
       });
@@ -184,6 +186,7 @@ export async function runEngineTask({
         finalMessage: taskAttempt.finalMessage,
         code: finalizedResult.code,
         failureCode: taskFailure.code,
+        failureHttpStatus: Number(taskFailure.httpStatus || 0),
         failureFamily: taskFailure.family,
         failureReason: taskFailure.reason,
         notification,
@@ -258,6 +261,7 @@ export async function runEngineTask({
           finalMessage: taskAttempt.finalMessage,
           code: finalizedResult.code,
           failureCode: activeFailure.code,
+          failureHttpStatus: Number(activeFailure.httpStatus || 0),
           failureFamily: activeFailure.family,
           failureReason: activeFailure.reason,
           notification,
@@ -285,6 +289,7 @@ export async function runEngineTask({
         nextRetryDelayMs: delayMs,
         nextRetryAt: new Date(Date.now() + delayMs).toISOString(),
         failureCode: activeFailure.code,
+        failureHttpStatus: Number(activeFailure.httpStatus || 0),
         failureFamily: activeFailure.family,
         failureReason: activeFailure.reason,
       });
@@ -298,6 +303,7 @@ export async function runEngineTask({
             recoveryHistory,
             code: stopped.code,
             failureCode: "host_closed",
+            failureHttpStatus: 0,
             failureFamily: "host_lease",
             failureReason: stopped.leaseReason,
           });
@@ -334,6 +340,7 @@ export async function runEngineTask({
           recoveryHistory,
           code: probeAttempt.result.code,
           failureCode: "host_closed",
+          failureHttpStatus: 0,
           failureFamily: "host_lease",
           failureReason: probeAttempt.result.leaseReason,
         });
@@ -360,6 +367,7 @@ export async function runEngineTask({
         probeCode: probeAttempt.result.code,
         probeAttemptPrefix: probeAttempt.attemptPrefix,
         probeFailureCode: probeAttempt.failure?.code || "",
+        probeFailureHttpStatus: Number(probeAttempt.failure?.httpStatus || 0),
         probeFailureFamily: probeAttempt.failure?.family || "",
         probeFailureReason: probeAttempt.failure?.reason || "",
         watchdogTriggered: taskAttempt.result.watchdogTriggered === true || probeAttempt.result.watchdogTriggered === true,
@@ -388,6 +396,7 @@ export async function runEngineTask({
           recoveryCount: nextRecoveryIndex,
           recoveryHistory,
           failureCode: activeFailure.code,
+          failureHttpStatus: Number(activeFailure.httpStatus || 0),
           failureFamily: activeFailure.family,
           failureReason: activeFailure.reason,
         });

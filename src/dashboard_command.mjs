@@ -2,14 +2,26 @@ import path from "node:path";
 
 import { nowIso, sleep } from "./common.mjs";
 import { createContext } from "./context.mjs";
-import { analyzeExecution } from "./backlog.mjs";
-import { loadBacklog } from "./config.mjs";
-import { buildDashboardHostContinuation } from "./host_continuation.mjs";
+import { analyzeAutomationExecution } from "./backlog.mjs";
+import { loadBacklog, loadProjectConfig } from "./config.mjs";
+import { buildDashboardHostContinuation, buildDisplayCurrentAction } from "./host_continuation.mjs";
 import { loadRuntimeSettings } from "./runtime_settings_loader.mjs";
 import { collectRepoStatusSnapshot } from "./runner_status.mjs";
+import { deriveSessionStatusModel } from "./status_model.mjs";
 import { hasRetryBudget, pickRetryDelaySeconds } from "./runtime_settings.mjs";
 import { isTrackedPidAlive } from "./supervisor_state.mjs";
 import { listActiveSessionEntries, listKnownWorkspaceEntries } from "./workspace_registry.mjs";
+import { backfillWorkflowArtifacts } from "./workflow_model.mjs";
+
+function formatSessionDisplayId(sessionId) {
+  const value = String(sessionId || "").trim();
+  const match = value.match(/^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})(?:-(\d+))?Z$/u);
+  if (!match) {
+    return value;
+  }
+  const [, date, hours, minutes, seconds, millis = ""] = match;
+  return `${date}-${hours}:${minutes}:${seconds}${millis ? `-${millis}` : ""}Z`;
+}
 
 function formatRuntimeLabel(runtime) {
   if (!runtime?.status) {
@@ -26,31 +38,65 @@ function formatRuntimeLabel(runtime) {
 }
 
 function formatCurrentAction(session) {
-  return session.activity?.current?.label
-    || session.runtime?.failureReason
-    || session.latestStatus?.message
-    || session.runtime?.status
+  return session.statusModel?.currentAction
+    || session.currentActionLabel
+    || buildDisplayCurrentAction(session)
     || "等待新事件";
 }
 
-function formatTodoLabel(activity) {
-  if (!activity?.todo?.total) {
-    return "";
+function buildHostResumeLabel(hostResume) {
+  if (hostResume?.statusModel?.autoAction) {
+    return hostResume.statusModel.autoAction;
   }
-  return `${activity.todo.completed}/${activity.todo.total}`;
+  if (hostResume?.supervisorActive) {
+    return "后台仍在运行，可直接接续观察";
+  }
+  if (hostResume?.nextTaskTitle) {
+    return "上轮已结束，仍有可执行待办，可直接续跑";
+  }
+  if (Number(hostResume?.summary?.pending || 0) > 0) {
+    return "上轮已结束，仍有待处理任务，请检查是否需要续跑";
+  }
+  if (hostResume?.issue?.label && String(hostResume?.runtimeStatus || "").toLowerCase() !== "completed") {
+    return hostResume.issue.label;
+  }
+  return "需要按续跑提示继续";
 }
 
 function readBacklogSnapshot(context) {
   try {
     const backlog = loadBacklog(context);
+    const projectConfig = loadProjectConfig(context);
+    const execution = analyzeAutomationExecution(backlog);
+    const workflowArtifacts = backfillWorkflowArtifacts({
+      repoRoot: context.repoRoot,
+      workflow: backlog.workflow || projectConfig.workflow || null,
+      docAnalysis: backlog.docAnalysis || projectConfig.docAnalysis || null,
+      tasks: Array.isArray(backlog.tasks) ? backlog.tasks : [],
+      requiredDocs: projectConfig.requiredDocs,
+    });
     return {
       tasks: Array.isArray(backlog.tasks) ? backlog.tasks : [],
-      execution: analyzeExecution(backlog),
+      execution,
+      automationExecution: execution,
+      workflow: workflowArtifacts.workflow,
+      docAnalysis: workflowArtifacts.docAnalysis,
     };
   } catch {
+    const projectConfig = loadProjectConfig(context);
+    const workflowArtifacts = backfillWorkflowArtifacts({
+      repoRoot: context.repoRoot,
+      workflow: projectConfig.workflow || null,
+      docAnalysis: projectConfig.docAnalysis || null,
+      tasks: [],
+      requiredDocs: projectConfig.requiredDocs,
+    });
     return {
       tasks: [],
       execution: null,
+      automationExecution: null,
+      workflow: workflowArtifacts.workflow,
+      docAnalysis: workflowArtifacts.docAnalysis,
     };
   }
 }
@@ -151,22 +197,41 @@ function buildSessionSnapshot(entry) {
     runtime,
     activity,
   };
+  const hostResume = buildDashboardHostContinuation(entry, snapshotForContinuation);
+  const currentActionLabel = buildDisplayCurrentAction(snapshotForContinuation);
+  const statusModel = deriveSessionStatusModel({
+    ...snapshotForContinuation,
+    summary: repoSnapshot.summary,
+    nextTask: repoSnapshot.automationNextTask || repoSnapshot.nextTask,
+    tasks: backlogSnapshot.tasks,
+    execution: backlogSnapshot.execution,
+    automationExecution: backlogSnapshot.automationExecution,
+  });
 
   return {
+    sessionKey: entry.sessionKey || `${entry.repoRoot}::${entry.configDirName || ""}`,
+    sessionOrder: Number.isFinite(Number(entry.sessionOrder)) ? Number(entry.sessionOrder) : Number.MAX_SAFE_INTEGER,
     repoRoot: entry.repoRoot,
     repoName: path.basename(entry.repoRoot),
     sessionId: entry.sessionId || repoSnapshot.latestStatus?.sessionId || "",
+    displaySessionId: formatSessionDisplayId(entry.sessionId || repoSnapshot.latestStatus?.sessionId || ""),
     command: entry.command || supervisor?.command || "",
     supervisor,
     latestStatus: repoSnapshot.latestStatus,
     runtime,
     activity,
     summary: repoSnapshot.summary,
-    nextTask: repoSnapshot.nextTask,
+    nextTask: repoSnapshot.automationNextTask || repoSnapshot.nextTask,
     tasks: backlogSnapshot.tasks,
     execution: backlogSnapshot.execution,
+    automationExecution: backlogSnapshot.automationExecution,
+    workflow: backlogSnapshot.workflow,
+    docAnalysis: backlogSnapshot.docAnalysis,
     isActive: entry.isActive === true,
-    hostResume: buildDashboardHostContinuation(entry, snapshotForContinuation),
+    hostResume,
+    hostResumeLabel: buildHostResumeLabel(hostResume),
+    currentActionLabel,
+    statusModel,
     updatedAt: repoSnapshot.activity?.updatedAt
       || repoSnapshot.runtime?.updatedAt
       || repoSnapshot.latestStatus?.updatedAt
@@ -204,6 +269,7 @@ export function collectDashboardSnapshot() {
   const knownEntries = listKnownWorkspaceEntries()
     .map((entry) => ({ ...entry, isActive: false }));
   const mergedEntries = new Map();
+  let sessionOrder = 0;
 
   for (const entry of [...knownEntries, ...activeEntries]) {
     const key = `${entry.repoRoot}::${entry.configDirName || ""}`;
@@ -211,16 +277,27 @@ export function collectDashboardSnapshot() {
     mergedEntries.set(key, {
       ...current,
       ...entry,
+      sessionKey: key,
+      sessionOrder: Number.isFinite(Number(current.sessionOrder)) ? current.sessionOrder : sessionOrder,
       isActive: entry.isActive === true || current.isActive === true,
     });
+    if (!Number.isFinite(Number(current.sessionOrder))) {
+      sessionOrder += 1;
+    }
   }
 
   const sessions = [...mergedEntries.values()]
     .map((entry) => buildSessionSnapshot(entry))
-    .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")));
+    .sort((left, right) => {
+      const byName = String(left.repoName || "").localeCompare(String(right.repoName || ""), "zh-CN");
+      if (byName !== 0) {
+        return byName;
+      }
+      return String(left.repoRoot || "").localeCompare(String(right.repoRoot || ""), "zh-CN");
+    });
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: nowIso(),
     activeCount: activeEntries.length,
     repoCount: sessions.length,
@@ -233,11 +310,18 @@ export function collectDashboardSnapshot() {
 function renderCompactSession(session, index) {
   return [
     `${index + 1}. ${session.repoName}`,
-    `   session=${session.sessionId}`,
+    `   session=${session.displaySessionId || session.sessionId || "unknown"}`,
     `   task=${session.latestStatus?.taskTitle || "无"}`,
     `   runtime=${formatRuntimeLabel(session.runtime)}`,
+    `   status=${session.statusModel?.label || "未知"}`,
+    ...(session.statusModel?.scheduler?.label ? [`   scheduler=${session.statusModel.scheduler.label}`] : []),
+    ...(session.statusModel?.reason ? [`   reason=${session.statusModel.reason}`] : []),
+    ...(session.statusModel?.failure?.label ? [`   failure=${session.statusModel.failure.label}`] : []),
+    ...(session.statusModel?.wait?.label ? [`   wait=${session.statusModel.wait.label}`] : []),
+    ...(session.statusModel?.waitTargetLabel ? [`   waitTarget=${session.statusModel.waitTargetLabel}`] : []),
+    ...(session.workflow?.currentFocus ? [`   workflow=${session.workflow.currentFocus}`] : []),
     `   action=${formatCurrentAction(session)}`,
-    ...(formatTodoLabel(session.activity) ? [`   todo=${formatTodoLabel(session.activity)}`] : []),
+    ...(session.statusModel?.todoProgress ? [`   progress=${session.statusModel.todoProgress}`] : []),
   ].join("\n");
 }
 
@@ -245,19 +329,31 @@ function renderDetailedSession(session, index, options) {
   const lines = [
     `[${index + 1}] ${session.repoName}`,
     `- 仓库：${session.repoRoot}`,
-    `- 会话：${session.sessionId}`,
+    `- 会话：${session.displaySessionId || session.sessionId || "unknown"}`,
     `- supervisor：${session.supervisor?.status || "unknown"}`,
     `- 命令：${session.command || "unknown"}`,
     `- 当前任务：${session.latestStatus?.taskTitle || "无"}`,
     `- 当前阶段：${session.latestStatus?.stage || "unknown"}`,
     `- backlog：已完成 ${session.summary?.done || 0} / 总计 ${session.summary?.total || 0} / 待处理 ${session.summary?.pending || 0}`,
+    ...(session.workflow?.profileLabel ? [`- 工作流画像：${session.workflow.profileLabel}`] : []),
+    ...(session.workflow?.currentFocus ? [`- 主线焦点：${session.workflow.currentFocus}`] : []),
+    ...(session.workflow?.parallelLanes?.length ? [`- 并行 lane：${session.workflow.parallelLanes.join(" / ")}`] : []),
+    ...(session.docAnalysis?.summary ? [`- 文档画像：${session.docAnalysis.summary}`] : []),
     `- 运行状态：${formatRuntimeLabel(session.runtime)}`,
+    `- 当前状态：${session.statusModel?.label || "未知"}`,
+    ...(session.statusModel?.scheduler?.label ? [`- 调度语义：${session.statusModel.scheduler.label}`] : []),
+    ...(session.statusModel?.reason ? [`- 状态原因：${session.statusModel.reason}`] : []),
+    ...(session.statusModel?.detail ? [`- 状态细节：${session.statusModel.detail}`] : []),
+    ...(session.statusModel?.failure?.label ? [`- 故障归类：${session.statusModel.failure.label}`] : []),
+    ...(session.statusModel?.autoAction ? [`- 自动动作：${session.statusModel.autoAction}`] : []),
+    ...(session.statusModel?.wait?.label ? [`- 等待状态：${session.statusModel.wait.label}`] : []),
+    ...(session.statusModel?.waitTargetLabel ? [`- 等待对象：${session.statusModel.waitTargetLabel}`] : []),
     `- 当前动作：${formatCurrentAction(session)}`,
-    `- 宿主续跑：${session.hostResume?.issue?.label || (session.hostResume?.supervisorActive ? "后台仍在运行，可直接接续观察" : "需要按续跑提示继续")}`,
+    `- 宿主续跑：${session.hostResumeLabel}`,
   ];
 
-  if (formatTodoLabel(session.activity)) {
-    lines.push(`- 当前待办：${formatTodoLabel(session.activity)}`);
+  if (session.statusModel?.todoProgress) {
+    lines.push(`- 步骤进度：${session.statusModel.todoProgress}`);
   }
   if (Array.isArray(session.activity?.activeCommands) && session.activity.activeCommands[0]?.label) {
     lines.push(`- 活动命令：${session.activity.activeCommands[0].label}`);
@@ -311,13 +407,25 @@ export function buildDashboardSnapshotSignature(snapshot) {
     stage: session.latestStatus?.stage || "",
     runtimeStatus: session.runtime?.status || "",
     idleSeconds: session.runtime?.heartbeat?.idleSeconds || 0,
-    action: session.activity?.current?.label || "",
-    todoCompleted: session.activity?.todo?.completed || 0,
-    todoTotal: session.activity?.todo?.total || 0,
+    statusCode: session.statusModel?.code || "",
+    schedulerCode: session.statusModel?.scheduler?.state || "",
+    schedulerLabel: session.statusModel?.scheduler?.label || "",
+    statusReason: session.statusModel?.reason || "",
+    failureCode: session.statusModel?.failure?.code || "",
+    failureLabel: session.statusModel?.failure?.label || "",
+    httpStatusCode: session.statusModel?.failure?.httpStatusCode || 0,
+    statusAutoAction: session.statusModel?.autoAction || "",
+    statusWaitLabel: session.statusModel?.wait?.label || "",
+    statusWaitTarget: session.statusModel?.waitTargetLabel || "",
+    action: session.statusModel?.currentAction || "",
+    todoProgress: session.statusModel?.todoProgress || "",
     eventLabel: session.activity?.recentEvents?.at(-1)?.label || "",
     resumeIssue: session.hostResume?.issue?.code || "",
+    workflowProfile: session.workflow?.profile || "",
+    workflowFocus: session.workflow?.currentFocus || "",
+    workflowLanes: (session.workflow?.parallelLanes || []).join("|"),
     taskFingerprint: (session.tasks || [])
-      .map((task) => `${task.id}:${task.status || "pending"}:${task.title}`)
+      .map((task) => `${task.id}:${task.status || "pending"}:${task.stage || ""}:${task.role || ""}:${task.title}`)
       .join("|"),
   })));
 }

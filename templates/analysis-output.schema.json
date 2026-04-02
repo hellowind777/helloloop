@@ -5,6 +5,7 @@
   "required": [
     "project",
     "summary",
+    "workflow",
     "constraints",
     "requestInterpretation",
     "repoDecision",
@@ -44,6 +45,55 @@
         "nextAction": {
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "currentFocus",
+        "mainlineSummary",
+        "phaseOrder",
+        "parallelLanes",
+        "coordinationRules"
+      ],
+      "properties": {
+        "currentFocus": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mainlineSummary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "phaseOrder": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "product",
+              "architecture",
+              "contract",
+              "implementation",
+              "test",
+              "review",
+              "release",
+              "operate"
+            ]
+          }
+        },
+        "parallelLanes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "coordinationRules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -131,9 +181,15 @@
           "status",
           "priority",
           "risk",
+          "stage",
+          "role",
+          "lane",
+          "parallelGroup",
           "goal",
           "docs",
           "paths",
+          "artifacts",
+          "blockedBy",
           "acceptance",
           "dependsOn",
           "verify"
@@ -173,6 +229,44 @@
               "critical"
             ]
           },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "product",
+              "architecture",
+              "contract",
+              "implementation",
+              "test",
+              "review",
+              "release",
+              "operate"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "product_owner",
+              "architect",
+              "summary",
+              "control",
+              "ux_designer",
+              "developer",
+              "tester",
+              "reviewer",
+              "supervisor",
+              "release_manager"
+            ]
+          },
+          "lane": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parallelGroup": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "goal": {
             "type": "string",
             "minLength": 1
@@ -187,6 +281,53 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blockedBy": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "id",
+                "label",
+                "status"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "task",
+                    "repo",
+                    "manual_input",
+                    "approval",
+                    "artifact",
+                    "external_system"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "resolved"
+                  ]
+                }
+              }
             }
           },
           "acceptance": {

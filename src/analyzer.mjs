@@ -27,9 +27,17 @@ import {
 } from "./analyzer_support.mjs";
 import { runEngineTask } from "./process.mjs";
 import { buildAnalysisPrompt } from "./analyze_prompt.mjs";
+import { registerKnownWorkspace } from "./workspace_registry.mjs";
+import { buildWorkflowBlueprint, inferDocumentAnalysis } from "./workflow_model.mjs";
 
 async function analyzeResolvedWorkspace(context, discovery, options = {}) {
   scaffoldIfMissing(context);
+  registerKnownWorkspace({
+    repoRoot: context.repoRoot,
+    configDirName: context.configDirName,
+    command: "analyze",
+    sessionId: "",
+  });
   const policy = loadPolicy(context);
   let engineResolution = options.engineResolution?.ok
     ? options.engineResolution
@@ -56,12 +64,20 @@ async function analyzeResolvedWorkspace(context, discovery, options = {}) {
     maxCharsPerFile: 18000,
     maxTotalChars: 90000,
   });
+  const docAnalysis = inferDocumentAnalysis(context.repoRoot, docPackets);
+  const workflowBlueprint = buildWorkflowBlueprint({
+    repoRoot: context.repoRoot,
+    docAnalysis,
+    planner: existingProjectConfig.planner,
+  });
 
   const prompt = buildAnalysisPrompt({
     repoRoot: context.repoRoot,
     repoOriginallyExisted: discovery?.resolution?.repo?.exists !== false,
     docsEntries: discovery.docsEntries,
     docPackets,
+    docAnalysis,
+    workflowBlueprint,
     existingStateText,
     existingBacklogText,
     existingProjectConstraints: existingProjectConfig.constraints,
@@ -70,6 +86,22 @@ async function analyzeResolvedWorkspace(context, discovery, options = {}) {
 
   const runDir = path.join(context.runsDir, `${nowIso().replaceAll(":", "-").replaceAll(".", "-")}-analysis`);
   const schemaFile = path.join(context.templatesDir, "analysis-output.schema.json");
+  writeStatus(context, {
+    ok: true,
+    stage: "analyzing",
+    taskId: null,
+    taskTitle: "",
+    runDir,
+    summary: {
+      total: 0,
+      pending: 0,
+      inProgress: 0,
+      done: 0,
+      failed: 0,
+      blocked: 0,
+    },
+    message: "HelloLoop 正在基于当前源码与开发文档重新分析仓库。",
+  });
   let analysisResult = await runEngineTask({
     engine: engineResolution.engine,
     context,
@@ -132,7 +164,11 @@ async function analyzeResolvedWorkspace(context, discovery, options = {}) {
 
   let analysis;
   try {
-    analysis = normalizeAnalysisPayload(payload, discovery.docsEntries);
+    analysis = normalizeAnalysisPayload(payload, {
+      docsEntries: discovery.docsEntries,
+      derivedDocAnalysis: docAnalysis,
+      derivedWorkflow: workflowBlueprint,
+    });
   } catch (error) {
     persistAnalysisFailure(
       context,
@@ -152,6 +188,8 @@ async function analyzeResolvedWorkspace(context, discovery, options = {}) {
     version: 1,
     project: analysis.project,
     updatedAt: nowIso(),
+    workflow: analysis.workflow,
+    docAnalysis: analysis.docAnalysis,
     tasks: analysis.tasks,
   };
 
@@ -160,6 +198,8 @@ async function analyzeResolvedWorkspace(context, discovery, options = {}) {
     constraints: analysis.constraints.length ? analysis.constraints : existingProjectConfig.constraints,
     defaultEngine: existingProjectConfig.defaultEngine,
     lastSelectedEngine: engineResolution.engine,
+    workflow: analysis.workflow,
+    docAnalysis: analysis.docAnalysis,
     planner: existingProjectConfig.planner,
   };
 

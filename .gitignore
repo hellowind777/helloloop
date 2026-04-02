@@ -5,3 +5,8 @@ Thumbs.db
 .helloagents/
 .helloloop/
 .tmp-debug/
+target/
+apps/hello-app/src-tauri/target/
+.cargo-target-verify*/
+target-cargo-test*/
+*.tgz

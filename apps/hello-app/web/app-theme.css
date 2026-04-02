@@ -1,0 +1,100 @@
+:root {
+  color-scheme: light;
+  --bg-top: #f9fbfd;
+  --bg: #eef2f7;
+  --bg-elevated: #f5f7fb;
+  --rail-bg: rgba(248, 250, 253, 0.86);
+  --surface: #ffffff;
+  --surface-2: #f7f8fb;
+  --surface-3: #eef2f8;
+  --surface-glass: rgba(255, 255, 255, 0.78);
+  --border: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(82, 95, 127, 0.18);
+  --text: #161b26;
+  --muted: #657189;
+  --accent: #336dff;
+  --ok: #159864;
+  --warn: #b8801d;
+  --danger: #cc445d;
+  --shadow: 0 22px 56px rgba(26, 34, 54, 0.12);
+  --accent-soft: rgba(97, 128, 245, 0.12);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-top: #0a0e15;
+  --bg: #0e131b;
+  --bg-elevated: #111824;
+  --rail-bg: rgba(16, 22, 32, 0.88);
+  --surface: #121a26;
+  --surface-2: #17202f;
+  --surface-3: #1d2939;
+  --surface-glass: rgba(18, 26, 38, 0.78);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --text: #edf2fb;
+  --muted: #9aa7bb;
+  --accent: #8fb1ff;
+  --ok: #53d6a2;
+  --warn: #f0c36c;
+  --danger: #ff829a;
+  --shadow: 0 24px 64px rgba(0, 0, 0, 0.32);
+  --accent-soft: rgba(143, 177, 255, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100vh;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, var(--accent-soft), transparent 24%),
+    radial-gradient(circle at right, rgba(118, 143, 255, 0.08), transparent 22%),
+    linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 100%);
+}
+
+button,
+a {
+  font: inherit;
+}
+
+.brand-kicker,
+.section-kicker,
+.meta-label,
+.timeline-label,
+.detail-key {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.brand-title,
+.hero-title,
+.section-title,
+.focus-title {
+  margin: 0;
+  font-weight: 680;
+}
+
+.brand-subtitle,
+.hero-copy,
+.meta-value,
+.focus-copy,
+.empty,
+.task-copy,
+.timeline-copy,
+.capability-copy,
+.footer-meta {
+  color: var(--muted);
+  line-height: 1.5;
+}

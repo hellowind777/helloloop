@@ -9,6 +9,7 @@ import { spawnNodeProcess } from "./node_process_launch.mjs";
 import { runLoop, runOnce } from "./runner.mjs";
 import {
   FINAL_SUPERVISOR_STATUSES,
+  clearSupervisorPause,
   hasActiveSupervisor,
   isTrackedPidAlive,
   readJsonIfExists,
@@ -117,6 +118,7 @@ export function launchSupervisedCommand(context, command, options = {}) {
   };
 
   fs.mkdirSync(context.supervisorRoot, { recursive: true });
+  clearSupervisorPause(context);
   removeIfExists(context.supervisorResultFile);
   removeIfExists(context.supervisorStdoutFile);
   removeIfExists(context.supervisorStderrFile);
